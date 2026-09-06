@@ -139,88 +139,138 @@ function Metric({ value, label }: { value: string; label: string }) {
 /* ───────────────────────── ACTIVITÉ ───────────────────────── */
 
 function ActivityScreen() {
-  const [module, setModule] = useState<'modules' | 'commercial'>('modules');
+  const [module, setModule] = useState<string | null>(null);
 
-  if (module === 'commercial') {
+  const modules = [
+    ['Commercial', 'Clients, prospects, opportunités', '128'],
+    ['Finance', 'Factures, dépenses, trésorerie', '12'],
+    ['Ressources humaines', 'Équipe, présence, congés', '24'],
+    ['Administration', 'Documents, contrats, tâches', '18'],
+    ['Communication', 'Messages, annonces, correspondance', '7'],
+  ];
+
+  if (module) {
+    const data: Record<string, {
+      subtitle: string;
+      metrics: [string,string,string,string];
+      items: [string,string,string][];
+    }> = {
+      Commercial: {
+        subtitle: 'Développez votre activité',
+        metrics: ['128','Clients','24','Prospects'],
+        items: [
+          ['Clients','Consulter et gérer vos clients','128'],
+          ['Prospects','Suivre vos prospects','24'],
+          ['Opportunités','Pipeline commercial','12'],
+          ['Devis','Devis commerciaux en cours','8'],
+        ],
+      },
+      Finance: {
+        subtitle: 'Pilotez vos finances',
+        metrics: ['36','Factures','8,4 M','Trésorerie'],
+        items: [
+          ['Factures','Créer et suivre les factures','36'],
+          ['Dépenses','Suivre les dépenses','14'],
+          ['Paiements','Encaissements et règlements','21'],
+          ['Échéances','Factures à surveiller','5'],
+        ],
+      },
+      'Ressources humaines': {
+        subtitle: 'Gérez votre équipe',
+        metrics: ['24','Employés','22','Présents'],
+        items: [
+          ['Employés','Fiches et informations','24'],
+          ['Présence','Pointage et présence','22'],
+          ['Congés','Demandes et absences','3'],
+          ['Documents RH','Contrats et dossiers','24'],
+        ],
+      },
+      Administration: {
+        subtitle: 'Organisez votre entreprise',
+        metrics: ['18','Documents','9','Tâches'],
+        items: [
+          ['Documents','Centraliser vos documents','18'],
+          ['Contrats','Suivre les contrats','7'],
+          ['Tâches','Organiser le travail','9'],
+          ['Fournisseurs','Gérer vos fournisseurs','16'],
+        ],
+      },
+      Communication: {
+        subtitle: 'Centralisez les échanges',
+        metrics: ['7','Messages','3','Annonces'],
+        items: [
+          ['Messages','Communication interne','7'],
+          ['Annonces','Informations à diffuser','3'],
+          ['Modèles','Emails et courriers','12'],
+          ['Notifications','Communications importantes','4'],
+        ],
+      },
+    };
+
+    const d = data[module];
+
     return (
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scroll}
-      >
-        <TouchableOpacity onPress={() => setModule('modules')} style={styles.back}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
+        <TouchableOpacity onPress={() => setModule(null)} style={styles.back}>
           <Text style={styles.backText}>‹ Activité</Text>
         </TouchableOpacity>
 
-        <ScreenHeader title="Commercial" subtitle="Développez votre activité" />
+        <ScreenHeader title={module} subtitle={d.subtitle} />
 
-        <Section>VUE COMMERCIALE</Section>
+        <Section>INDICATEURS</Section>
 
         <View style={styles.metrics}>
-          <Metric value="128" label="Clients" />
-          <Metric value="24" label="Prospects" />
-          <Metric value="12" label="Opportunités" />
+          <Metric value={d.metrics[0]} label={d.metrics[1]} />
+          <Metric value={d.metrics[2]} label={d.metrics[3]} />
         </View>
 
         <Section>GESTION</Section>
 
         <Card>
-          <Row title="Clients" subtitle="Consulter et gérer vos clients" value="128" />
-          <Row title="Prospects" subtitle="Suivre vos prospects" value="24" />
-          <Row title="Opportunités" subtitle="Suivre votre pipeline commercial" value="12" />
-          <Row title="Devis" subtitle="Devis commerciaux en cours" value="8" />
+          {d.items.map(([title, subtitle, value]) => (
+            <Row key={title} title={title} subtitle={subtitle} value={value} />
+          ))}
         </Card>
 
-        <Section>PIPELINE</Section>
+        <Section>IA</Section>
 
         <Card>
-          <PipelineRow label="Nouveaux" value="5" />
-          <PipelineRow label="En discussion" value="4" />
-          <PipelineRow label="Proposition" value="2" />
-          <PipelineRow label="Gagnés" value="1" />
+          <View style={styles.aiHeader}>
+            <View style={styles.dot} />
+            <Text style={styles.aiTitle}>Analyse intelligente</Text>
+          </View>
+          <Text style={styles.aiText}>
+            L’IA pourra analyser les données de ce module et proposer des décisions.
+          </Text>
         </Card>
       </ScrollView>
     );
   }
 
   return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.scroll}
-    >
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
       <ScreenHeader title="Activité" subtitle="Gérez votre entreprise" />
 
       <Section>MODULES</Section>
 
       <Card>
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => setModule('commercial')}
-          style={styles.row}
-        >
-          <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>Commercial</Text>
-            <Text style={styles.rowSubtitle}>Clients, prospects, opportunités</Text>
-          </View>
-          <Text style={styles.chevron}>›</Text>
-        </TouchableOpacity>
-
-        <Row title="Finance" subtitle="Factures, dépenses, trésorerie" />
-        <Row title="Ressources humaines" subtitle="Équipe, présence, congés" />
-        <Row title="Administration" subtitle="Documents, contrats, tâches" />
-        <Row title="Communication" subtitle="Messages et annonces" />
+        {modules.map(([title, subtitle, value]) => (
+          <TouchableOpacity
+            key={title}
+            activeOpacity={0.7}
+            onPress={() => setModule(title)}
+            style={styles.row}
+          >
+            <View style={styles.rowText}>
+              <Text style={styles.rowTitle}>{title}</Text>
+              <Text style={styles.rowSubtitle}>{subtitle}</Text>
+            </View>
+            <Text style={styles.rowValue}>{value}</Text>
+            <Text style={styles.chevron}>›</Text>
+          </TouchableOpacity>
+        ))}
       </Card>
     </ScrollView>
-  );
-}
-
-function PipelineRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.pipelineRow}>
-      <Text style={styles.rowTitle}>{label}</Text>
-      <View style={styles.pipelineValue}>
-        <Text style={styles.pipelineValueText}>{value}</Text>
-      </View>
-    </View>
   );
 }
 
