@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   SafeAreaView,
   StatusBar,
@@ -6,16 +6,28 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ScrollView,
 } from 'react-native';
 
-const COLORS = {
-  background: '#F7F7F5',
+type Tab = 'Accueil' | 'Activité' | 'IA' | 'Alertes' | 'Profil';
+
+const C = {
+  bg: '#F7F7F5',
   surface: '#FFFFFF',
   text: '#171717',
-  secondary: '#737373',
+  muted: '#737373',
+  light: '#A3A3A3',
   border: '#E5E5E5',
-  primary: '#171717',
-  muted: '#F0F0EE',
+  soft: '#F0F0EE',
+  success: '#4B6B50',
+};
+
+const T = {
+  title: 26,
+  heading: 20,
+  body: 15,
+  small: 12,
+  label: 10,
 };
 
 function Card({
@@ -28,219 +40,502 @@ function Card({
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-function Action({
+function Section({ children }: { children: React.ReactNode }) {
+  return <Text style={styles.section}>{children}</Text>;
+}
+
+function Row({
   title,
+  subtitle,
   value,
+  onPress,
 }: {
   title: string;
-  value: string;
+  subtitle?: string;
+  value?: string;
+  onPress?: () => void;
 }) {
   return (
-    <TouchableOpacity activeOpacity={0.7} style={styles.action}>
-      <Text style={styles.actionValue}>{value}</Text>
-      <Text style={styles.actionTitle}>{title}</Text>
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={styles.row}
+    >
+      <View style={styles.rowText}>
+        <Text style={styles.rowTitle}>{title}</Text>
+        {subtitle && <Text style={styles.rowSubtitle}>{subtitle}</Text>}
+      </View>
+      {value && <Text style={styles.rowValue}>{value}</Text>}
+      <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
   );
 }
 
+/* ───────────────────────── ACCUEIL ───────────────────────── */
+
+function HomeScreen() {
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scroll}
+    >
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.eyebrow}>ESPACE ENTREPRISE</Text>
+          <Text style={styles.title}>Bonjour</Text>
+        </View>
+
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>E</Text>
+        </View>
+      </View>
+
+      <Section>VUE D’ENSEMBLE</Section>
+
+      <Card>
+        <Text style={styles.cardLabel}>Chiffre d’affaires</Text>
+        <Text style={styles.revenue}>12 450 000 FCFA</Text>
+        <Text style={styles.success}>+8,4 % ce mois</Text>
+      </Card>
+
+      <Section>À TRAITER</Section>
+
+      <View style={styles.metrics}>
+        <Metric value="4" label="Factures" />
+        <Metric value="2" label="Tâches" />
+        <Metric value="3" label="Alertes" />
+      </View>
+
+      <Section>DÉCISION IA</Section>
+
+      <Card>
+        <View style={styles.aiHeader}>
+          <View style={styles.dot} />
+          <Text style={styles.aiTitle}>Attention requise</Text>
+        </View>
+
+        <Text style={styles.aiText}>
+          3 décisions nécessitent votre attention.
+        </Text>
+
+        <TouchableOpacity style={styles.linkButton}>
+          <Text style={styles.linkText}>Voir les décisions</Text>
+          <Text style={styles.arrow}>→</Text>
+        </TouchableOpacity>
+      </Card>
+    </ScrollView>
+  );
+}
+
+function Metric({ value, label }: { value: string; label: string }) {
+  return (
+    <Card style={styles.metric}>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
+    </Card>
+  );
+}
+
+/* ───────────────────────── ACTIVITÉ ───────────────────────── */
+
+function ActivityScreen() {
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scroll}
+    >
+      <ScreenHeader title="Activité" subtitle="Gérez votre entreprise" />
+
+      <Section>MODULES</Section>
+
+      <Card>
+        <Row
+          title="Commercial"
+          subtitle="Clients, prospects, opportunités"
+          value="→"
+        />
+        <Row
+          title="Finance"
+          subtitle="Factures, dépenses, trésorerie"
+          value="→"
+        />
+        <Row
+          title="Ressources humaines"
+          subtitle="Équipe, présence, congés"
+          value="→"
+        />
+        <Row
+          title="Administration"
+          subtitle="Documents, contrats, tâches"
+          value="→"
+        />
+        <Row
+          title="Communication"
+          subtitle="Messages et annonces"
+          value="→"
+        />
+      </Card>
+    </ScrollView>
+  );
+}
+
+/* ───────────────────────── IA ───────────────────────── */
+
+function AIScreen() {
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scroll}
+    >
+      <ScreenHeader title="IA" subtitle="Votre intelligence décisionnelle" />
+
+      <Card style={styles.aiMain}>
+        <View style={styles.aiLargeIcon}>
+          <Text style={styles.aiLargeText}>AI</Text>
+        </View>
+
+        <Text style={styles.aiMainTitle}>Que voulez-vous savoir ?</Text>
+
+        <Text style={styles.aiMainText}>
+          Posez une question sur votre entreprise ou demandez une analyse.
+        </Text>
+
+        <TouchableOpacity style={styles.primaryButton}>
+          <Text style={styles.primaryText}>Poser une question</Text>
+        </TouchableOpacity>
+      </Card>
+
+      <Section>DÉCISIONS</Section>
+
+      <Card>
+        <Row
+          title="Décisions en attente"
+          subtitle="Nécessitent votre validation"
+          value="3"
+        />
+        <Row
+          title="Analyses récentes"
+          subtitle="Consultez les dernières analyses"
+          value="→"
+        />
+      </Card>
+
+      <Section>ACTIONS</Section>
+
+      <Card>
+        <Row
+          title="Actions proposées"
+          subtitle="Actions préparées par l'IA"
+          value="5"
+        />
+      </Card>
+    </ScrollView>
+  );
+}
+
+/* ───────────────────────── ALERTES ───────────────────────── */
+
+function AlertsScreen() {
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scroll}
+    >
+      <ScreenHeader title="Alertes" subtitle="Ce qui nécessite votre attention" />
+
+      <Section>AUJOURD’HUI</Section>
+
+      <Card>
+        <AlertItem
+          title="3 décisions à valider"
+          subtitle="IA · Il y a 10 min"
+        />
+        <AlertItem
+          title="2 factures arrivent à échéance"
+          subtitle="Finance · Il y a 1 h"
+        />
+        <AlertItem
+          title="Une tâche est en retard"
+          subtitle="Administration · Il y a 3 h"
+        />
+      </Card>
+
+      <Section>RÉCENT</Section>
+
+      <Card>
+        <AlertItem
+          title="Nouveau prospect"
+          subtitle="Commercial · Hier"
+        />
+        <AlertItem
+          title="Document ajouté"
+          subtitle="Administration · Hier"
+        />
+      </Card>
+    </ScrollView>
+  );
+}
+
+function AlertItem({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <TouchableOpacity style={styles.alertItem} activeOpacity={0.7}>
+      <View style={styles.alertDot} />
+      <View>
+        <Text style={styles.alertTitle}>{title}</Text>
+        <Text style={styles.alertSubtitle}>{subtitle}</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+/* ───────────────────────── PROFIL ───────────────────────── */
+
+function ProfileScreen() {
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scroll}
+    >
+      <ScreenHeader title="Profil" subtitle="Compte et entreprise" />
+
+      <Card style={styles.profileCard}>
+        <View style={styles.profileAvatar}>
+          <Text style={styles.profileAvatarText}>E</Text>
+        </View>
+
+        <Text style={styles.profileName}>Votre entreprise</Text>
+        <Text style={styles.profileRole}>Administrateur</Text>
+      </Card>
+
+      <Section>ENTREPRISE</Section>
+
+      <Card>
+        <Row title="Informations" subtitle="Nom, activité, coordonnées" />
+        <Row title="Membres" subtitle="Utilisateurs et rôles" value="4" />
+        <Row title="Départements" subtitle="Organisation interne" value="5" />
+      </Card>
+
+      <Section>COMPTE</Section>
+
+      <Card>
+        <Row title="Abonnement" subtitle="Gérer votre formule" />
+        <Row title="Notifications" subtitle="Préférences" />
+        <Row title="Sécurité" subtitle="Accès et authentification" />
+      </Card>
+    </ScrollView>
+  );
+}
+
+/* ───────────────────────── HEADER ───────────────────────── */
+
+function ScreenHeader({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle: string;
+}) {
+  return (
+    <View style={styles.screenHeader}>
+      <Text style={styles.screenTitle}>{title}</Text>
+      <Text style={styles.screenSubtitle}>{subtitle}</Text>
+    </View>
+  );
+}
+
+/* ───────────────────────── APP ───────────────────────── */
+
 export default function App() {
+  const [activeTab, setActiveTab] = useState<Tab>('Accueil');
+
+  const screens: Record<Tab, React.ReactNode> = {
+    Accueil: <HomeScreen />,
+    Activité: <ActivityScreen />,
+    IA: <AIScreen />,
+    Alertes: <AlertsScreen />,
+    Profil: <ProfileScreen />,
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor={COLORS.background} />
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={C.bg}
+      />
 
       <View style={styles.container}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Bonjour</Text>
-            <Text style={styles.name}>Votre entreprise</Text>
-          </View>
-
-          <TouchableOpacity style={styles.avatar} activeOpacity={0.7}>
-            <Text style={styles.avatarText}>E</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.content}>
-          <Text style={styles.sectionLabel}>VUE D’ENSEMBLE</Text>
-
-          <Card style={styles.revenueCard}>
-            <Text style={styles.cardLabel}>Chiffre d’affaires</Text>
-            <Text style={styles.revenue}>12 450 000 FCFA</Text>
-            <Text style={styles.positive}>+8,4 % ce mois</Text>
-          </Card>
-
-          <Text style={styles.sectionLabel}>À TRAITER</Text>
-
-          <View style={styles.actions}>
-            <Action title="Factures" value="4" />
-            <Action title="Tâches" value="2" />
-            <Action title="Alertes" value="3" />
-          </View>
-
-          <Text style={styles.sectionLabel}>DÉCISION IA</Text>
-
-          <Card>
-            <View style={styles.aiHeader}>
-              <View style={styles.aiDot} />
-              <Text style={styles.aiTitle}>Attention requise</Text>
-            </View>
-
-            <Text style={styles.aiText}>
-              3 décisions nécessitent votre attention.
-            </Text>
-
-            <TouchableOpacity activeOpacity={0.7} style={styles.aiButton}>
-              <Text style={styles.aiButtonText}>Voir les décisions</Text>
-              <Text style={styles.arrow}>→</Text>
-            </TouchableOpacity>
-          </Card>
-        </View>
+        <View style={styles.content}>{screens[activeTab]}</View>
 
         <View style={styles.tabBar}>
-          <Tab label="Accueil" active />
-          <Tab label="Activité" />
-          <Tab label="IA" />
-          <Tab label="Alertes" />
-          <Tab label="Profil" />
+          {(
+            ['Accueil', 'Activité', 'IA', 'Alertes', 'Profil'] as Tab[]
+          ).map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              activeOpacity={0.7}
+              onPress={() => setActiveTab(tab)}
+              style={styles.tab}
+            >
+              <View
+                style={[
+                  styles.tabIndicator,
+                  activeTab === tab && styles.tabIndicatorActive,
+                ]}
+              />
+
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === tab && styles.tabTextActive,
+                ]}
+              >
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
     </SafeAreaView>
   );
 }
 
-function Tab({
-  label,
-  active = false,
-}: {
-  label: string;
-  active?: boolean;
-}) {
-  return (
-    <TouchableOpacity style={styles.tab} activeOpacity={0.7}>
-      <Text style={[styles.tabText, active && styles.tabActive]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
-}
+/* ───────────────────────── DESIGN SYSTEM ───────────────────────── */
 
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: C.bg,
   },
 
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: C.bg,
+  },
+
+  content: {
+    flex: 1,
+  },
+
+  scroll: {
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 28,
   },
 
   header: {
-    paddingHorizontal: 22,
-    paddingTop: 18,
-    paddingBottom: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 12,
   },
 
-  greeting: {
-    fontSize: 14,
-    color: COLORS.secondary,
-  },
-
-  name: {
-    marginTop: 3,
-    fontSize: 22,
+  eyebrow: {
+    fontSize: C.small,
+    letterSpacing: 1,
     fontWeight: '600',
-    color: COLORS.text,
+    color: C.muted,
+  },
+
+  title: {
+    marginTop: 4,
+    fontSize: C.title,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  screenHeader: {
+    marginBottom: 10,
+  },
+
+  screenTitle: {
+    fontSize: C.title,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  screenSubtitle: {
+    marginTop: 4,
+    fontSize: C.body,
+    color: C.muted,
   },
 
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.text,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: C.text,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
   avatarText: {
-    color: COLORS.surface,
+    color: C.surface,
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
-  content: {
-    flex: 1,
-    paddingHorizontal: 22,
-    paddingTop: 12,
-  },
-
-  sectionLabel: {
-    marginTop: 18,
+  section: {
+    marginTop: 20,
     marginBottom: 9,
-    fontSize: 11,
+    fontSize: C.label,
     letterSpacing: 1,
-    fontWeight: '600',
-    color: COLORS.secondary,
+    fontWeight: '700',
+    color: C.muted,
   },
 
   card: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 18,
-    padding: 18,
+    backgroundColor: C.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-
-  revenueCard: {
-    paddingVertical: 20,
+    borderColor: C.border,
+    borderRadius: 18,
+    padding: 17,
   },
 
   cardLabel: {
-    fontSize: 13,
-    color: COLORS.secondary,
+    fontSize: C.small,
+    color: C.muted,
   },
 
   revenue: {
-    marginTop: 8,
+    marginTop: 7,
     fontSize: 27,
     fontWeight: '700',
-    color: COLORS.text,
+    color: C.text,
   },
 
-  positive: {
+  success: {
     marginTop: 7,
-    fontSize: 13,
-    color: '#4B6B50',
+    fontSize: C.small,
+    fontWeight: '600',
+    color: C.success,
   },
 
-  actions: {
+  metrics: {
     flexDirection: 'row',
     gap: 9,
   },
 
-  action: {
+  metric: {
     flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: 16,
-    paddingVertical: 15,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+    padding: 15,
   },
 
-  actionValue: {
+  metricValue: {
     fontSize: 22,
     fontWeight: '700',
-    color: COLORS.text,
+    color: C.text,
   },
 
-  actionTitle: {
+  metricLabel: {
     marginTop: 4,
-    fontSize: 12,
-    color: COLORS.secondary,
+    fontSize: C.small,
+    color: C.muted,
   },
 
   aiHeader: {
@@ -248,55 +543,202 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
 
-  aiDot: {
+  dot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: COLORS.text,
+    backgroundColor: C.text,
     marginRight: 8,
   },
 
   aiTitle: {
     fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
+    fontWeight: '700',
+    color: C.text,
   },
 
   aiText: {
     marginTop: 10,
-    fontSize: 15,
+    fontSize: C.body,
     lineHeight: 21,
-    color: COLORS.secondary,
+    color: C.muted,
   },
 
-  aiButton: {
+  linkButton: {
     marginTop: 16,
     paddingTop: 13,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+    borderTopColor: C.border,
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
 
-  aiButtonText: {
+  linkText: {
     fontSize: 14,
-    fontWeight: '600',
-    color: COLORS.text,
+    fontWeight: '700',
+    color: C.text,
   },
 
   arrow: {
     fontSize: 18,
-    color: COLORS.text,
+    color: C.text,
+  },
+
+  row: {
+    minHeight: 66,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+
+  rowText: {
+    flex: 1,
+    paddingRight: 10,
+  },
+
+  rowTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.text,
+  },
+
+  rowSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 17,
+    color: C.muted,
+  },
+
+  rowValue: {
+    marginRight: 8,
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.muted,
+  },
+
+  chevron: {
+    fontSize: 23,
+    color: C.light,
+  },
+
+  aiMain: {
+    padding: 20,
+  },
+
+  aiLargeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: C.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+  },
+
+  aiLargeText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: C.text,
+  },
+
+  aiMainTitle: {
+    fontSize: C.heading,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  aiMainText: {
+    marginTop: 7,
+    fontSize: C.body,
+    lineHeight: 21,
+    color: C.muted,
+  },
+
+  primaryButton: {
+    marginTop: 18,
+    height: 48,
+    borderRadius: 13,
+    backgroundColor: C.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  primaryText: {
+    color: C.surface,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+  alertItem: {
+    minHeight: 65,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+
+  alertDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: C.text,
+    marginRight: 12,
+  },
+
+  alertTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.text,
+  },
+
+  alertSubtitle: {
+    marginTop: 4,
+    fontSize: 12,
+    color: C.muted,
+  },
+
+  profileCard: {
+    alignItems: 'center',
+    paddingVertical: 24,
+  },
+
+  profileAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: C.text,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  profileAvatarText: {
+    color: C.surface,
+    fontSize: 22,
+    fontWeight: '700',
+  },
+
+  profileName: {
+    marginTop: 12,
+    fontSize: 18,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  profileRole: {
+    marginTop: 4,
+    fontSize: 13,
+    color: C.muted,
   },
 
   tabBar: {
     height: 72,
-    paddingHorizontal: 8,
+    paddingHorizontal: 5,
     paddingBottom: 7,
-    paddingTop: 7,
     borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-    backgroundColor: COLORS.surface,
+    borderTopColor: C.border,
+    backgroundColor: C.surface,
     flexDirection: 'row',
   },
 
@@ -306,13 +748,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  tabText: {
-    fontSize: 11,
-    color: '#999999',
+  tabIndicator: {
+    position: 'absolute',
+    top: 0,
+    width: 22,
+    height: 2,
+    backgroundColor: 'transparent',
   },
 
-  tabActive: {
-    color: COLORS.text,
+  tabIndicatorActive: {
+    backgroundColor: C.text,
+  },
+
+  tabText: {
+    fontSize: 10,
+    color: C.light,
+  },
+
+  tabTextActive: {
+    color: C.text,
     fontWeight: '700',
   },
 });
