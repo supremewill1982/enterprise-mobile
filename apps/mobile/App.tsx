@@ -436,7 +436,7 @@ const styles = StyleSheet.create({
   },
 
   eyebrow: {
-    fontSize: C.small,
+    fontSize: T.small,
     letterSpacing: 1,
     fontWeight: '600',
     color: C.muted,
@@ -444,7 +444,7 @@ const styles = StyleSheet.create({
 
   title: {
     marginTop: 4,
-    fontSize: C.title,
+    fontSize: T.title,
     fontWeight: '700',
     color: C.text,
   },
@@ -454,14 +454,14 @@ const styles = StyleSheet.create({
   },
 
   screenTitle: {
-    fontSize: C.title,
+    fontSize: T.title,
     fontWeight: '700',
     color: C.text,
   },
 
   screenSubtitle: {
     marginTop: 4,
-    fontSize: C.body,
+    fontSize: T.body,
     color: C.muted,
   },
 
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   section: {
     marginTop: 20,
     marginBottom: 9,
-    fontSize: C.label,
+    fontSize: T.label,
     letterSpacing: 1,
     fontWeight: '700',
     color: C.muted,
@@ -498,7 +498,7 @@ const styles = StyleSheet.create({
   },
 
   cardLabel: {
-    fontSize: C.small,
+    fontSize: T.small,
     color: C.muted,
   },
 
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
 
   success: {
     marginTop: 7,
-    fontSize: C.small,
+    fontSize: T.small,
     fontWeight: '600',
     color: C.success,
   },
@@ -534,7 +534,7 @@ const styles = StyleSheet.create({
 
   metricLabel: {
     marginTop: 4,
-    fontSize: C.small,
+    fontSize: T.small,
     color: C.muted,
   },
 
@@ -559,7 +559,7 @@ const styles = StyleSheet.create({
 
   aiText: {
     marginTop: 10,
-    fontSize: C.body,
+    fontSize: T.body,
     lineHeight: 21,
     color: C.muted,
   },
@@ -644,14 +644,14 @@ const styles = StyleSheet.create({
   },
 
   aiMainTitle: {
-    fontSize: C.heading,
+    fontSize: T.heading,
     fontWeight: '700',
     color: C.text,
   },
 
   aiMainText: {
     marginTop: 7,
-    fontSize: C.body,
+    fontSize: T.body,
     lineHeight: 21,
     color: C.muted,
   },
