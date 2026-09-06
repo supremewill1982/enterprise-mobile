@@ -139,6 +139,49 @@ function Metric({ value, label }: { value: string; label: string }) {
 /* ───────────────────────── ACTIVITÉ ───────────────────────── */
 
 function ActivityScreen() {
+  const [module, setModule] = useState<'modules' | 'commercial'>('modules');
+
+  if (module === 'commercial') {
+    return (
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scroll}
+      >
+        <TouchableOpacity onPress={() => setModule('modules')} style={styles.back}>
+          <Text style={styles.backText}>‹ Activité</Text>
+        </TouchableOpacity>
+
+        <ScreenHeader title="Commercial" subtitle="Développez votre activité" />
+
+        <Section>VUE COMMERCIALE</Section>
+
+        <View style={styles.metrics}>
+          <Metric value="128" label="Clients" />
+          <Metric value="24" label="Prospects" />
+          <Metric value="12" label="Opportunités" />
+        </View>
+
+        <Section>GESTION</Section>
+
+        <Card>
+          <Row title="Clients" subtitle="Consulter et gérer vos clients" value="128" />
+          <Row title="Prospects" subtitle="Suivre vos prospects" value="24" />
+          <Row title="Opportunités" subtitle="Suivre votre pipeline commercial" value="12" />
+          <Row title="Devis" subtitle="Devis commerciaux en cours" value="8" />
+        </Card>
+
+        <Section>PIPELINE</Section>
+
+        <Card>
+          <PipelineRow label="Nouveaux" value="5" />
+          <PipelineRow label="En discussion" value="4" />
+          <PipelineRow label="Proposition" value="2" />
+          <PipelineRow label="Gagnés" value="1" />
+        </Card>
+      </ScrollView>
+    );
+  }
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -149,33 +192,35 @@ function ActivityScreen() {
       <Section>MODULES</Section>
 
       <Card>
-        <Row
-          title="Commercial"
-          subtitle="Clients, prospects, opportunités"
-          value="→"
-        />
-        <Row
-          title="Finance"
-          subtitle="Factures, dépenses, trésorerie"
-          value="→"
-        />
-        <Row
-          title="Ressources humaines"
-          subtitle="Équipe, présence, congés"
-          value="→"
-        />
-        <Row
-          title="Administration"
-          subtitle="Documents, contrats, tâches"
-          value="→"
-        />
-        <Row
-          title="Communication"
-          subtitle="Messages et annonces"
-          value="→"
-        />
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setModule('commercial')}
+          style={styles.row}
+        >
+          <View style={styles.rowText}>
+            <Text style={styles.rowTitle}>Commercial</Text>
+            <Text style={styles.rowSubtitle}>Clients, prospects, opportunités</Text>
+          </View>
+          <Text style={styles.chevron}>›</Text>
+        </TouchableOpacity>
+
+        <Row title="Finance" subtitle="Factures, dépenses, trésorerie" />
+        <Row title="Ressources humaines" subtitle="Équipe, présence, congés" />
+        <Row title="Administration" subtitle="Documents, contrats, tâches" />
+        <Row title="Communication" subtitle="Messages et annonces" />
       </Card>
     </ScrollView>
+  );
+}
+
+function PipelineRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.pipelineRow}>
+      <Text style={styles.rowTitle}>{label}</Text>
+      <View style={styles.pipelineValue}>
+        <Text style={styles.pipelineValueText}>{value}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -463,6 +508,41 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: T.body,
     color: C.muted,
+  },
+
+  back: {
+    marginBottom: 16,
+  },
+
+  backText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.text,
+  },
+
+  pipelineRow: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+
+  pipelineValue: {
+    minWidth: 32,
+    height: 28,
+    paddingHorizontal: 9,
+    borderRadius: 9,
+    backgroundColor: C.soft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  pipelineValueText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: C.text,
   },
 
   avatar: {
