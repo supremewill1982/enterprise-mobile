@@ -1,13 +1,38 @@
-import React, { useState } from 'react';
+import * as Linking from 'expo-linking';
+import React, { useEffect, useState } from 'react';
 import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
   SafeAreaView,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
-  ScrollView,
 } from 'react-native';
+import LoginScreen from './LoginScreen';
+import CustomersScreen from './features/customers/CustomersScreen';
+import SuppliersScreen from './features/suppliers/SuppliersScreen';
+import EmployeesScreen from './features/employees/EmployeesScreen';
+import TasksScreen from './features/tasks/TasksScreen';
+import InvoicesScreen from './features/invoices/InvoicesScreen';
+import QuotesScreen from './features/quotes/QuotesScreen';
+import ExpensesScreen from './features/expenses/ExpensesScreen';
+import PaymentsScreen from './features/payments/PaymentsScreen';
+import NotificationsScreen from './features/notifications/NotificationsScreen';
+import DocumentsEntrepriseScreen from './features/documents/DocumentsEntrepriseScreen';
+import { supabase } from './lib/supabase';
+import { PermissionsProvider, usePermissions } from './lib/PermissionsContext';
+import {
+  askAI,
+  confirmAIAction,
+  executeAIAction,
+  AIActionProposal,
+} from './lib/aiService';
 
 type Tab = 'Accueil' | 'Activité' | 'IA' | 'Alertes' | 'Profil';
 
@@ -73,7 +98,47 @@ function Row({
 
 /* ───────────────────────── ACCUEIL ───────────────────────── */
 
-function HomeScreen() {
+function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+  const { role, can } = usePermissions();
+  const [counts, setCounts] = useState({ clients: 0, invoices: 0, employees: 0, tasks: 0, alerts: 0 });
+
+  useEffect(() => {
+    async function loadData() {
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session.session?.user.id;
+      if (!userId) return;
+
+      const { data: memberships } = await supabase
+        .schema("enterprise")
+        .from("organization_members")
+        .select("organization_id")
+        .eq("user_id", userId);
+
+      const organizationIds = (memberships ?? []).map((m) => m.organization_id);
+      if (!organizationIds.length) return;
+
+      const tables = ["customers", "invoices", "employees", "tasks", "notifications"] as const;
+      const results = await Promise.all(
+        tables.map((table) =>
+          supabase
+            .schema("enterprise")
+            .from(table)
+            .select("*", { count: "exact", head: true })
+            .in("organization_id", organizationIds)
+        )
+      );
+
+      setCounts({
+        clients: results[0].count ?? 0,
+        invoices: results[1].count ?? 0,
+        employees: results[2].count ?? 0,
+        tasks: results[3].count ?? 0,
+        alerts: results[4].count ?? 0,
+      });
+    }
+    loadData();
+  }, []);
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -82,7 +147,19 @@ function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>ESPACE ENTREPRISE</Text>
-          <Text style={styles.title}>Bonjour</Text>
+          <Text style={styles.title}>
+            {role === "OWNER" || role === "ADMIN"
+              ? "Pilotage"
+              : role === "FINANCE"
+              ? "Finance"
+              : role === "HR"
+              ? "Ressources humaines"
+              : role === "COMMERCIAL"
+              ? "Commercial"
+              : role === "MANAGER"
+              ? "Mon activité"
+              : "Mon espace"}
+          </Text>
         </View>
 
         <View style={styles.avatar}>
@@ -90,20 +167,28 @@ function HomeScreen() {
         </View>
       </View>
 
-      <Section>VUE D’ENSEMBLE</Section>
+      {(can("direction", "view") || can("finance", "view")) && (
+        <>
+          <Section>VUE D’ENSEMBLE</Section>
 
-      <Card>
-        <Text style={styles.cardLabel}>Chiffre d’affaires</Text>
-        <Text style={styles.revenue}>12 450 000 FCFA</Text>
-        <Text style={styles.success}>+8,4 % ce mois</Text>
-      </Card>
+          <Card>
+            <Text style={styles.cardLabel}>Chiffre d’affaires</Text>
+            <Text style={styles.revenue}>— FCFA</Text>
+            <Text style={styles.success}>Données réelles à venir</Text>
+          </Card>
+        </>
+      )}
 
       <Section>À TRAITER</Section>
 
       <View style={styles.metrics}>
-        <Metric value="4" label="Factures" />
-        <Metric value="2" label="Tâches" />
-        <Metric value="3" label="Alertes" />
+        {can("finance", "view") && (
+          <Metric value={String(counts.invoices)} label="Factures" />
+        )}
+        {can("tasks", "view") && (
+          <Metric value={String(counts.tasks)} label="Tâches" />
+        )}
+        <Metric value={String(counts.alerts)} label="Alertes" />
       </View>
 
       <Section>DÉCISION IA</Section>
@@ -115,10 +200,10 @@ function HomeScreen() {
         </View>
 
         <Text style={styles.aiText}>
-          3 décisions nécessitent votre attention.
+          Aucune donnée de décision chargée.
         </Text>
 
-        <TouchableOpacity style={styles.linkButton}>
+        <TouchableOpacity style={styles.linkButton} onPress={() => onNavigate("IA")}>
           <Text style={styles.linkText}>Voir les décisions</Text>
           <Text style={styles.arrow}>→</Text>
         </TouchableOpacity>
@@ -139,190 +224,571 @@ function Metric({ value, label }: { value: string; label: string }) {
 /* ───────────────────────── ACTIVITÉ ───────────────────────── */
 
 function ActivityScreen() {
-  const [module, setModule] = useState<string | null>(null);
+  const { can } = usePermissions();
+  const [showCustomers, setShowCustomers] = useState(false);
+  const [showSuppliers, setShowSuppliers] = useState(false);
+  const [showEmployees, setShowEmployees] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
+  const [showInvoices, setShowInvoices] = useState(false);
+  const [showQuotes, setShowQuotes] = useState(false);
+  const [showExpenses, setShowExpenses] = useState(false);
+  const [showPayments, setShowPayments] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
-  const modules = [
-    ['Commercial', 'Clients, prospects, opportunités', '128'],
-    ['Finance', 'Factures, dépenses, trésorerie', '12'],
-    ['Ressources humaines', 'Équipe, présence, congés', '24'],
-    ['Administration', 'Documents, contrats, tâches', '18'],
-    ['Communication', 'Messages, annonces, correspondance', '7'],
-  ];
+  const [data, setData] = useState({
+    quotes: 0,
+    clients: 0,
+    invoices: 0,
+    employees: 0,
+    suppliers: 0,
+    tasks: 0,
+    expenses: 0,
+    payments: 0,
+  });
 
-  if (module) {
-    const data: Record<string, {
-      subtitle: string;
-      metrics: [string,string,string,string];
-      items: [string,string,string][];
-    }> = {
-      Commercial: {
-        subtitle: 'Développez votre activité',
-        metrics: ['128','Clients','24','Prospects'],
-        items: [
-          ['Clients','Consulter et gérer vos clients','128'],
-          ['Prospects','Suivre vos prospects','24'],
-          ['Opportunités','Pipeline commercial','12'],
-          ['Devis','Devis commerciaux en cours','8'],
-        ],
-      },
-      Finance: {
-        subtitle: 'Pilotez vos finances',
-        metrics: ['36','Factures','8,4 M','Trésorerie'],
-        items: [
-          ['Factures','Créer et suivre les factures','36'],
-          ['Dépenses','Suivre les dépenses','14'],
-          ['Paiements','Encaissements et règlements','21'],
-          ['Échéances','Factures à surveiller','5'],
-        ],
-      },
-      'Ressources humaines': {
-        subtitle: 'Gérez votre équipe',
-        metrics: ['24','Employés','22','Présents'],
-        items: [
-          ['Employés','Fiches et informations','24'],
-          ['Présence','Pointage et présence','22'],
-          ['Congés','Demandes et absences','3'],
-          ['Documents RH','Contrats et dossiers','24'],
-        ],
-      },
-      Administration: {
-        subtitle: 'Organisez votre entreprise',
-        metrics: ['18','Documents','9','Tâches'],
-        items: [
-          ['Documents','Centraliser vos documents','18'],
-          ['Contrats','Suivre les contrats','7'],
-          ['Tâches','Organiser le travail','9'],
-          ['Fournisseurs','Gérer vos fournisseurs','16'],
-        ],
-      },
-      Communication: {
-        subtitle: 'Centralisez les échanges',
-        metrics: ['7','Messages','3','Annonces'],
-        items: [
-          ['Messages','Communication interne','7'],
-          ['Annonces','Informations à diffuser','3'],
-          ['Modèles','Emails et courriers','12'],
-          ['Notifications','Communications importantes','4'],
-        ],
-      },
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadData() {
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session.session?.user.id;
+      if (!userId) return;
+
+      const { data: memberships } = await supabase
+        .schema("enterprise")
+        .from("organization_members")
+        .select("organization_id")
+        .eq("user_id", userId);
+
+      const organizationIds = (memberships ?? []).map(
+        (m) => m.organization_id
+      );
+
+      if (!organizationIds.length) return;
+
+      const tables = [
+        "customers",
+        "invoices",
+        "quotes",
+        "employees",
+        "suppliers",
+        "tasks",
+        "expenses",
+        "payments",
+      ] as const;
+
+      const results = await Promise.all(
+        tables.map((table) =>
+          supabase
+            .schema("enterprise")
+            .from(table)
+            .select("*", { count: "exact", head: true })
+            .in("organization_id", organizationIds)
+        )
+      );
+
+      if (!mounted) return;
+
+      setData({
+        clients: results[0].count ?? 0,
+        invoices: results[1].count ?? 0,
+        quotes: results[2].count ?? 0,
+        employees: results[3].count ?? 0,
+        suppliers: results[4].count ?? 0,
+        tasks: results[5].count ?? 0,
+        expenses: results[6].count ?? 0,
+        payments: results[7].count ?? 0,
+      });
+    }
+
+    loadData();
+
+    return () => {
+      mounted = false;
     };
+  }, []);
 
-    const d = data[module];
-
+  if (showCustomers) {
     return (
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-        <TouchableOpacity onPress={() => setModule(null)} style={styles.back}>
-          <Text style={styles.backText}>‹ Activité</Text>
-        </TouchableOpacity>
-
-        <ScreenHeader title={module} subtitle={d.subtitle} />
-
-        <Section>INDICATEURS</Section>
-
-        <View style={styles.metrics}>
-          <Metric value={d.metrics[0]} label={d.metrics[1]} />
-          <Metric value={d.metrics[2]} label={d.metrics[3]} />
-        </View>
-
-        <Section>GESTION</Section>
-
-        <Card>
-          {d.items.map(([title, subtitle, value]) => (
-            <Row key={title} title={title} subtitle={subtitle} value={value} />
-          ))}
-        </Card>
-
-        <Section>IA</Section>
-
-        <Card>
-          <View style={styles.aiHeader}>
-            <View style={styles.dot} />
-            <Text style={styles.aiTitle}>Analyse intelligente</Text>
-          </View>
-          <Text style={styles.aiText}>
-            L’IA pourra analyser les données de ce module et proposer des décisions.
-          </Text>
-        </Card>
-      </ScrollView>
+      <CustomersScreen
+        onBack={() => setShowCustomers(false)}
+      />
     );
   }
 
-  return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
-      <ScreenHeader title="Activité" subtitle="Gérez votre entreprise" />
+  if (showSuppliers) {
+    return (
+      <SuppliersScreen
+        onBack={() => setShowSuppliers(false)}
+      />
+    );
+  }
 
-      <Section>MODULES</Section>
+  if (showEmployees) {
+    return (
+      <EmployeesScreen
+        onBack={() => setShowEmployees(false)}
+      />
+    );
+  }
 
-      <Card>
-        {modules.map(([title, subtitle, value]) => (
-          <TouchableOpacity
-            key={title}
-            activeOpacity={0.7}
-            onPress={() => setModule(title)}
-            style={styles.row}
-          >
-            <View style={styles.rowText}>
-              <Text style={styles.rowTitle}>{title}</Text>
-              <Text style={styles.rowSubtitle}>{subtitle}</Text>
-            </View>
-            <Text style={styles.rowValue}>{value}</Text>
-            <Text style={styles.chevron}>›</Text>
-          </TouchableOpacity>
-        ))}
-      </Card>
-    </ScrollView>
-  );
-}
+  if (showTasks) {
+    return (
+      <TasksScreen
+        onBack={() => setShowTasks(false)}
+      />
+    );
+  }
 
-/* ───────────────────────── IA ───────────────────────── */
+  if (showInvoices) {
+    return (
+      <InvoicesScreen
+        onBack={() => setShowInvoices(false)}
+      />
+    );
+  }
 
-function AIScreen() {
+  const modules = [
+    ...(can("commercial", "view")
+      ? [{
+      title: "Commercial",
+      subtitle: "Clients et activité commerciale",
+      metrics: [
+        ["Clients", String(data.clients)],
+        ["Prospects", "—"],
+        ["Opportunités", "—"],
+        ["Devis", "—"],
+      ] as [string, string][],
+    },
+    ]
+      : []),
+    ...(can("finance", "view")
+      ? [{
+      title: "Finance",
+      subtitle: "Factures, dépenses et paiements",
+      metrics: [
+        ["Factures", String(data.invoices)],
+      ["Devis", String(data.quotes)],
+        ["Dépenses", String(data.expenses)],
+        ["Paiements", String(data.payments)],
+        ["Trésorerie", "—"],
+      ] as [string, string][],
+    },
+    ]
+      : []),
+    ...(can("hr", "view")
+      ? [{
+      title: "Ressources humaines",
+      subtitle: "Équipe et collaborateurs",
+      metrics: [
+        ["Employés", String(data.employees)],
+        ["Présence", "—"],
+        ["Congés", "—"],
+        ["Documents RH", "—"],
+      ] as [string, string][],
+    },
+    ]
+      : []),
+    ...(can("tasks", "view")
+      ? [{
+      title: "Administration",
+      subtitle: "Tâches et fournisseurs",
+      metrics: [
+        ["Tâches", String(data.tasks)],
+        ["Fournisseurs", String(data.suppliers)],
+        ["Documents", "—"],
+        ["Contrats", "—"],
+      ] as [string, string][],
+    },
+    ]
+      : []),
+    ...(can("communication", "view")
+      ? [{
+      title: "Communication",
+      subtitle: "Communication interne",
+      metrics: [
+        ["Messages", "—"],
+        ["Annonces", "—"],
+        ["Modèles", "—"],
+        ["Notifications", "—"],
+      ] as [string, string][],
+    },
+    ]
+      : []),
+  ];
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.scroll}
     >
-      <ScreenHeader title="IA" subtitle="Votre intelligence décisionnelle" />
+      <ScreenHeader
+        title="Activité"
+        subtitle="Vue d'ensemble de votre entreprise"
+      />
 
-      <Card style={styles.aiMain}>
-        <View style={styles.aiLargeIcon}>
-          <Text style={styles.aiLargeText}>AI</Text>
-        </View>
+      {modules.map((module) => (
+        <Card key={module.title}>
+          <Text style={styles.moduleTitle}>{module.title}</Text>
+          <Text style={styles.moduleSubtitle}>{module.subtitle}</Text>
 
-        <Text style={styles.aiMainTitle}>Que voulez-vous savoir ?</Text>
+          <View style={styles.metricsGrid}>
+            {module.metrics.map(([label, value]) => {
+              const isClients =
+                module.title === "Commercial" && label === "Clients";
+              const isSuppliers =
+                module.title === "Administration" && label === "Fournisseurs";
+              const isEmployees =
+                module.title === "Ressources humaines" && label === "Employés";
+              const isTasks =
+                module.title === "Administration" && label === "Tâches";
+              const isInvoices =
+                module.title === "Finance" && label === "Factures";
+              const isQuotes =
+                module.title === "Finance" && label === "Devis";
 
-        <Text style={styles.aiMainText}>
-          Posez une question sur votre entreprise ou demandez une analyse.
+              return (
+                <Pressable
+                  key={label}
+                  style={styles.metricBox}
+                  onPress={
+                    isClients
+                      ? () => setShowCustomers(true)
+                      : isSuppliers
+                        ? () => setShowSuppliers(true)
+                        : isEmployees
+                        ? () => setShowEmployees(true)
+                        : isTasks
+                          ? () => setShowTasks(true)
+                          : isInvoices
+                            ? () => setShowInvoices(true)
+                            : isQuotes
+                              ? () => setShowQuotes(true)
+                              : undefined
+                  }
+                  disabled={
+                    !isClients &&
+                    !isSuppliers &&
+                    !isEmployees &&
+                    !isTasks &&
+                    !isInvoices &&
+                    !isQuotes
+                  }
+                >
+                  <Text style={styles.metricValue}>{value}</Text>
+                  <Text style={styles.metricLabel}>{label}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </Card>
+      ))}
+    </ScrollView>
+  );
+}
+
+
+/* ───────────────────────── IA ───────────────────────── */
+
+function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+  const [message, setMessage] = React.useState('');
+  const [answer, setAnswer] = React.useState('');
+  const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const [proposal, setProposal] = React.useState<AIActionProposal | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [actionLoading, setActionLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+  const [actionMessage, setActionMessage] = React.useState<string | null>(null);
+
+  async function handleAsk() {
+    const cleanMessage = message.trim();
+
+    if (!cleanMessage || loading || actionLoading) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setActionMessage(null);
+    setProposal(null);
+
+    try {
+      const result = await askAI(cleanMessage, conversationId);
+
+      setConversationId(result.conversation_id);
+      setAnswer(result.answer);
+      setProposal(result.action_proposal);
+      setMessage('');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Impossible de contacter l’Agent IA.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleConfirmAndExecute() {
+    if (!proposal || actionLoading) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError(null);
+    setActionMessage(null);
+
+    try {
+      const confirmed = await confirmAIAction(proposal.id);
+
+      if (!confirmed.proposal) {
+        throw new Error('La proposition n’a pas pu être confirmée.');
+      }
+
+      const executed = await executeAIAction(proposal.id);
+
+      setProposal({
+        ...proposal,
+        status: 'executed',
+      });
+
+      setActionMessage(
+        executed.message ??
+          'Action exécutée avec succès.',
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Impossible de confirmer ou d’exécuter l’action.',
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  return (
+    <ScrollView
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.scroll}
+    >
+      <ScreenHeader
+        title="Assistant IA"
+        subtitle="Votre assistant opérationnel"
+      />
+
+      <Card>
+        <Text style={styles.moduleTitle}>Que voulez-vous faire ?</Text>
+
+        <Text style={styles.moduleSubtitle}>
+          Posez une question sur votre entreprise ou demandez à l’Agent
+          de préparer une action.
         </Text>
 
-        <TouchableOpacity style={styles.primaryButton}>
-          <Text style={styles.primaryText}>Poser une question</Text>
-        </TouchableOpacity>
+        <TextInput
+          value={message}
+          onChangeText={setMessage}
+          placeholder="Ex. Quels sont mes impayés ?"
+          placeholderTextColor="#999"
+          multiline
+          editable={!loading && !actionLoading}
+          style={[
+            styles.card,
+            {
+              minHeight: 100,
+              marginTop: 16,
+              textAlignVertical: 'top',
+            },
+          ]}
+        />
+
+        <Pressable
+          style={[
+            styles.primaryButton,
+            {
+              opacity:
+                loading || actionLoading || !message.trim()
+                  ? 0.55
+                  : 1,
+            },
+          ]}
+          onPress={handleAsk}
+          disabled={loading || actionLoading || !message.trim()}
+        >
+          <Text style={styles.primaryText}>
+            {loading ? 'Analyse en cours...' : 'Demander à l’IA'}
+          </Text>
+        </Pressable>
+
+        {error && (
+          <Text
+            style={[
+              styles.moduleSubtitle,
+              {
+                marginTop: 14,
+                marginBottom: 0,
+              },
+            ]}
+          >
+            {error}
+          </Text>
+        )}
       </Card>
 
-      <Section>DÉCISIONS</Section>
+      {answer ? (
+        <Card>
+          <Text style={styles.moduleTitle}>Réponse</Text>
+
+          <Text style={styles.moduleSubtitle}>
+            {answer}
+          </Text>
+
+          {proposal && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={styles.moduleTitle}>
+                Action préparée
+              </Text>
+
+              <Text style={styles.moduleSubtitle}>
+                {proposal.rationale ??
+                  'L’Agent a préparé une action nécessitant votre validation.'}
+              </Text>
+
+              <View
+                style={[
+                  styles.card,
+                  {
+                    marginTop: 4,
+                  },
+                ]}
+              >
+                <Text style={styles.metricLabel}>
+                  {proposal.action_type}
+                </Text>
+
+                <Text style={styles.moduleSubtitle}>
+                  Niveau de risque : {proposal.risk_level}
+                </Text>
+
+                <Text style={styles.moduleSubtitle}>
+                  Statut :{' '}
+                  {proposal.status === 'executed'
+                    ? 'Exécutée'
+                    : proposal.status === 'confirmed'
+                    ? 'Confirmée'
+                    : 'En attente de validation'}
+                </Text>
+
+                {proposal.status !== 'executed' && (
+                  <Pressable
+                    style={[
+                      styles.primaryButton,
+                      {
+                        marginTop: 4,
+                        opacity: actionLoading ? 0.55 : 1,
+                      },
+                    ]}
+                    onPress={handleConfirmAndExecute}
+                    disabled={actionLoading}
+                  >
+                    <Text style={styles.primaryText}>
+                      {actionLoading
+                        ? 'Confirmation et exécution...'
+                        : 'Confirmer et exécuter'}
+                    </Text>
+                  </Pressable>
+                )}
+
+                {proposal.status === 'executed' && (
+                  <Text
+                    style={[
+                      styles.success,
+                      {
+                        marginTop: 12,
+                      },
+                    ]}
+                  >
+                    Action exécutée avec succès.
+                  </Text>
+                )}
+
+                {actionMessage && (
+                  <Text
+                    style={[
+                      styles.moduleSubtitle,
+                      {
+                        marginTop: 12,
+                        marginBottom: 0,
+                      },
+                    ]}
+                  >
+                    {actionMessage}
+                  </Text>
+                )}
+              </View>
+            </View>
+          )}
+        </Card>
+      ) : null}
 
       <Card>
-        <Row
-          title="Décisions en attente"
-          subtitle="Nécessitent votre validation"
-          value="3"
-        />
-        <Row
-          title="Analyses récentes"
-          subtitle="Consultez les dernières analyses"
-          value="→"
-        />
+        <Text style={styles.moduleTitle}>Suggestions</Text>
+
+        <Pressable
+          style={styles.card}
+          onPress={() =>
+            setMessage('Prépare-moi un résumé de mon entreprise.')
+          }
+        >
+          <Text style={styles.metricLabel}>
+            Résume-moi la situation de l’entreprise
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.card}
+          onPress={() =>
+            setMessage('Quelles sont les tâches prioritaires aujourd’hui ?')
+          }
+        >
+          <Text style={styles.metricLabel}>
+            Quelles sont mes priorités ?
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.card}
+          onPress={() =>
+            setMessage('Quels sont les éléments importants à surveiller ?')
+          }
+        >
+          <Text style={styles.metricLabel}>
+            Que dois-je surveiller ?
+          </Text>
+        </Pressable>
       </Card>
 
-      <Section>ACTIONS</Section>
-
       <Card>
-        <Row
-          title="Actions proposées"
-          subtitle="Actions préparées par l'IA"
-          value="5"
-        />
+        <Text style={styles.moduleTitle}>Accès rapide</Text>
+
+        <Pressable
+          style={styles.card}
+          onPress={() => onNavigate('Activité')}
+        >
+          <Text style={styles.metricLabel}>
+            Voir l’activité de l’entreprise
+          </Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.card}
+          onPress={() => onNavigate('Alertes')}
+        >
+          <Text style={styles.metricLabel}>
+            Voir les alertes
+          </Text>
+        </Pressable>
       </Card>
     </ScrollView>
   );
@@ -331,6 +797,26 @@ function AIScreen() {
 /* ───────────────────────── ALERTES ───────────────────────── */
 
 function AlertsScreen() {
+  const [alerts, setAlerts] = useState<{ id: string; title: string; message: string; created_at: string }[]>([]);
+
+  useEffect(() => {
+    async function loadAlerts() {
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session.session?.user.id;
+      if (!userId) return;
+
+      const { data } = await supabase
+        .schema('enterprise')
+        .from('notifications')
+        .select('id,title,message,created_at')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      setAlerts(data ?? []);
+    }
+    loadAlerts();
+  }, []);
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -338,35 +824,22 @@ function AlertsScreen() {
     >
       <ScreenHeader title="Alertes" subtitle="Ce qui nécessite votre attention" />
 
-      <Section>AUJOURD’HUI</Section>
-
+      <Section>NOTIFICATIONS</Section>
       <Card>
-        <AlertItem
-          title="3 décisions à valider"
-          subtitle="IA · Il y a 10 min"
-        />
-        <AlertItem
-          title="2 factures arrivent à échéance"
-          subtitle="Finance · Il y a 1 h"
-        />
-        <AlertItem
-          title="Une tâche est en retard"
-          subtitle="Administration · Il y a 3 h"
-        />
+        {alerts.length === 0 ? (
+          <Text style={styles.rowSubtitle}>Aucune notification.</Text>
+        ) : (
+          alerts.map((alert) => (
+            <AlertItem
+              key={alert.id}
+              title={alert.title}
+              subtitle={alert.message}
+            />
+          ))
+        )}
       </Card>
 
-      <Section>RÉCENT</Section>
 
-      <Card>
-        <AlertItem
-          title="Nouveau prospect"
-          subtitle="Commercial · Hier"
-        />
-        <AlertItem
-          title="Document ajouté"
-          subtitle="Administration · Hier"
-        />
-      </Card>
     </ScrollView>
   );
 }
@@ -392,6 +865,84 @@ function AlertItem({
 /* ───────────────────────── PROFIL ───────────────────────── */
 
 function ProfileScreen() {
+  const [showDocuments, setShowDocuments] = useState(false);
+
+  const [profile, setProfile] = useState({
+    email: "—",
+    organization: "—",
+    role: "—",
+    members: "—",
+    departments: "—",
+  });
+
+  useEffect(() => {
+    async function loadProfile() {
+      const { data: session } = await supabase.auth.getSession();
+      const user = session.session?.user;
+      if (!user) return;
+
+      const { data: membership } = await supabase
+        .schema("enterprise")
+        .from("organization_members")
+        .select("organization_id, role")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      if (!membership) {
+        setProfile((current) => ({ ...current, email: user.email ?? "—" }));
+        return;
+      }
+
+      const organizationId = membership.organization_id;
+
+      const [{ data: organization }, { count: members }, { data: employees }] =
+        await Promise.all([
+          supabase
+            .schema("enterprise")
+            .from("organizations")
+            .select("name")
+            .eq("id", organizationId)
+            .maybeSingle(),
+          supabase
+            .schema("enterprise")
+            .from("organization_members")
+            .select("*", { count: "exact", head: true })
+            .eq("organization_id", organizationId),
+          supabase
+            .schema("enterprise")
+            .from("employees")
+            .select("department")
+            .eq("organization_id", organizationId)
+            .not("department", "is", null),
+        ]);
+
+      const departments = new Set(
+        (employees ?? [])
+          .map((employee) => employee.department)
+          .filter(Boolean)
+      ).size;
+
+      setProfile({
+        email: user.email ?? "—",
+        organization: organization?.name ?? "—",
+        role: membership.role ?? "—",
+        members: String(members ?? 0),
+        departments: String(departments),
+      });
+    }
+
+    loadProfile();
+  }, []);
+
+  if (showDocuments) {
+    return (
+      <DocumentsEntrepriseScreen
+        onBack={() => setShowDocuments(false)}
+      />
+    );
+  }
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -401,19 +952,35 @@ function ProfileScreen() {
 
       <Card style={styles.profileCard}>
         <View style={styles.profileAvatar}>
-          <Text style={styles.profileAvatarText}>E</Text>
+          <Text style={styles.profileAvatarText}>
+            {(profile.organization[0] ?? "E").toUpperCase()}
+          </Text>
         </View>
 
-        <Text style={styles.profileName}>Votre entreprise</Text>
-        <Text style={styles.profileRole}>Administrateur</Text>
+        <Text style={styles.profileName}>{profile.organization}</Text>
+        <Text style={styles.profileRole}>{profile.role}</Text>
+        <Text style={styles.rowSubtitle}>{profile.email}</Text>
       </Card>
 
       <Section>ENTREPRISE</Section>
 
       <Card>
         <Row title="Informations" subtitle="Nom, activité, coordonnées" />
-        <Row title="Membres" subtitle="Utilisateurs et rôles" value="4" />
-        <Row title="Départements" subtitle="Organisation interne" value="5" />
+        <Row title="Membres" subtitle="Utilisateurs et rôles" value={profile.members} />
+        <Row title="Départements" subtitle="Organisation interne" value={profile.departments} />
+
+        <Pressable
+          onPress={() => setShowDocuments(true)}
+          style={styles.documentProfileRow}
+        >
+          <View style={styles.documentProfileText}>
+            <Text style={styles.rowTitle}>Documents & modèles</Text>
+            <Text style={styles.rowSubtitle}>
+              Devis, factures et règles documentaires
+            </Text>
+          </View>
+          <Text style={styles.documentProfileArrow}>›</Text>
+        </Pressable>
       </Card>
 
       <Section>COMPTE</Section>
@@ -446,19 +1013,189 @@ function ScreenHeader({
 
 /* ───────────────────────── APP ───────────────────────── */
 
+function PasswordResetScreen({ onDone }: { onDone: () => void }) {
+  const [password, setPassword] = React.useState('');
+  const [confirmation, setConfirmation] = React.useState('');
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmation, setShowConfirmation] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+
+  async function handleReset() {
+    if (password.length < 6) {
+      Alert.alert('Mot de passe invalide', 'Utilise au moins 6 caractères.');
+      return;
+    }
+    if (password !== confirmation) {
+      Alert.alert('Confirmation incorrecte', 'Les deux mots de passe doivent être identiques.');
+      return;
+    }
+
+    setLoading(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setLoading(false);
+
+    if (error) {
+      Alert.alert('Erreur', error.message);
+      return;
+    }
+
+    Alert.alert('Mot de passe modifié', 'Ton nouveau mot de passe est enregistré.', [
+      { text: 'Continuer', onPress: onDone },
+    ]);
+  }
+
+  return (
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: '#F8FAFC' }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={{ backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24 }}>
+          <Text style={{ fontSize: 28, fontWeight: '800', color: '#0F172A', marginBottom: 8 }}>
+            Nouveau mot de passe
+          </Text>
+          <Text style={{ color: '#64748B', marginBottom: 24 }}>
+            Choisis un nouveau mot de passe pour ton compte Enterprise.
+          </Text>
+
+          <View style={{ marginBottom: 16 }}>
+            <Text style={{ fontWeight: '700', color: '#334155', marginBottom: 8 }}>
+              Nouveau mot de passe
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                placeholder="6 caractères minimum"
+                autoCapitalize="none"
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: '#CBD5E1',
+                  borderRadius: 12,
+                  padding: 14,
+                }}
+              />
+              <Pressable onPress={() => setShowPassword(!showPassword)} style={{ marginLeft: 10 }}>
+                <Text style={{ color: '#2563EB', fontWeight: '700' }}>
+                  {showPassword ? 'Masquer' : 'Afficher'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontWeight: '700', color: '#334155', marginBottom: 8 }}>
+              Confirmer le mot de passe
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TextInput
+                value={confirmation}
+                onChangeText={setConfirmation}
+                secureTextEntry={!showConfirmation}
+                placeholder="Répète le mot de passe"
+                autoCapitalize="none"
+                style={{
+                  flex: 1,
+                  borderWidth: 1,
+                  borderColor: '#CBD5E1',
+                  borderRadius: 12,
+                  padding: 14,
+                }}
+              />
+              <Pressable onPress={() => setShowConfirmation(!showConfirmation)} style={{ marginLeft: 10 }}>
+                <Text style={{ color: '#2563EB', fontWeight: '700' }}>
+                  {showConfirmation ? 'Masquer' : 'Afficher'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+
+          <Pressable
+            onPress={handleReset}
+            disabled={loading}
+            style={{
+              backgroundColor: '#2563EB',
+              borderRadius: 12,
+              padding: 16,
+              alignItems: 'center',
+              opacity: loading ? 0.6 : 1,
+            }}
+          >
+            <Text style={{ color: '#FFFFFF', fontWeight: '800' }}>
+              {loading ? 'Enregistrement...' : 'Enregistrer le nouveau mot de passe'}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
 export default function App() {
+  const [authenticated, setAuthenticated] = React.useState(false);
+  const [passwordRecovery, setPasswordRecovery] = React.useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('Accueil');
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setAuthenticated(!!data.session);
+    });
+
+    const handleUrl = (url: string | null) => {
+      if (url?.includes('/auth/reset')) {
+        setPasswordRecovery(true);
+      }
+    };
+
+    Linking.getInitialURL().then(handleUrl);
+
+    const urlSubscription = Linking.addEventListener('url', ({ url }) => {
+      handleUrl(url);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      setAuthenticated(!!session);
+      if (event === 'PASSWORD_RECOVERY') {
+        setPasswordRecovery(true);
+      }
+    });
+
+    return () => {
+      urlSubscription.remove();
+      listener.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (passwordRecovery) {
+    return (
+      <PasswordResetScreen
+        onDone={() => {
+          setPasswordRecovery(false);
+          setAuthenticated(false);
+          supabase.auth.signOut();
+        }}
+      />
+    );
+  }
+
+  if (!authenticated) return <LoginScreen onLogin={() => {}} />;
+
   const screens: Record<Tab, React.ReactNode> = {
-    Accueil: <HomeScreen />,
+    Accueil: <HomeScreen onNavigate={setActiveTab} />,
     Activité: <ActivityScreen />,
-    IA: <AIScreen />,
+    IA: <AIScreen onNavigate={setActiveTab} />,
     Alertes: <AlertsScreen />,
     Profil: <ProfileScreen />,
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <PermissionsProvider>
+      <SafeAreaView style={styles.safe}>
       <StatusBar
         barStyle="dark-content"
         backgroundColor={C.bg}
@@ -496,7 +1233,8 @@ export default function App() {
           ))}
         </View>
       </View>
-    </SafeAreaView>
+      </SafeAreaView>
+    </PermissionsProvider>
   );
 }
 
@@ -651,6 +1389,27 @@ const styles = StyleSheet.create({
     gap: 9,
   },
 
+  moduleTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#171717",
+    marginBottom: 4,
+  },
+  moduleSubtitle: {
+    fontSize: 13,
+    color: "#737373",
+    marginBottom: 14,
+  },
+  metricsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginHorizontal: -5,
+  },
+  metricBox: {
+    width: "50%",
+    paddingHorizontal: 5,
+    paddingVertical: 8,
+  },
   metric: {
     flex: 1,
     padding: 15,
@@ -826,6 +1585,24 @@ const styles = StyleSheet.create({
   alertSubtitle: {
     marginTop: 4,
     fontSize: 12,
+    color: C.muted,
+  },
+
+  documentProfileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 14,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+  documentProfileText: {
+    flex: 1,
+  },
+  documentProfileArrow: {
+    marginLeft: 12,
+    fontSize: 24,
     color: C.muted,
   },
 

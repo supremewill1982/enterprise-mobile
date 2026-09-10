@@ -1,0 +1,2 @@
+[functions.enterprise-rag]
+verify_jwt = true
