@@ -989,6 +989,19 @@ function ProfileScreen() {
         <Row title="Abonnement" subtitle="Gérer votre formule" />
         <Row title="Notifications" subtitle="Préférences" />
         <Row title="Sécurité" subtitle="Accès et authentification" />
+
+        <Pressable
+          onPress={() => supabase.auth.signOut()}
+          style={styles.documentProfileRow}
+        >
+          <View style={styles.documentProfileText}>
+            <Text style={styles.rowTitle}>Déconnexion</Text>
+            <Text style={styles.rowSubtitle}>
+              Se déconnecter de ce compte
+            </Text>
+          </View>
+          <Text style={styles.documentProfileArrow}>›</Text>
+        </Pressable>
       </Card>
     </ScrollView>
   );
