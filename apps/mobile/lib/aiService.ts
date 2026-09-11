@@ -46,7 +46,7 @@ export async function askAI(
   }
 
   const { data, error } = await supabase.functions.invoke(
-    'enterprise-agent',
+    'enterprise-agent-v4',
     {
       body: {
         message: cleanMessage,
@@ -56,7 +56,49 @@ export async function askAI(
   );
 
   if (error) {
-    throw error;
+    const context = (error as any)?.context;
+
+    console.log('=== ENTERPRISE AGENT ERROR ===');
+    console.log('ERROR MESSAGE:', error.message);
+    console.log('ERROR NAME:', error.name);
+
+    if (context) {
+      console.log('HTTP STATUS:', context.status);
+      console.log('HTTP STATUS TEXT:', context.statusText);
+    }
+
+    if (context?.clone) {
+      try {
+        const response = context.clone();
+        const rawBody = await response.text();
+
+        console.log('=== EDGE FUNCTION RAW RESPONSE ===');
+        console.log(rawBody);
+
+        try {
+          const body = JSON.parse(rawBody);
+
+          if (body?.error) {
+            throw new Error(String(body.error));
+          }
+
+          if (body?.message) {
+            throw new Error(String(body.message));
+          }
+        } catch (parseError) {
+          if (
+            parseError instanceof Error &&
+            parseError.message !== 'Unexpected end of JSON input'
+          ) {
+            throw parseError;
+          }
+        }
+      } catch (readError) {
+        console.log('EDGE RESPONSE READ ERROR:', readError);
+      }
+    }
+
+    throw new Error(error.message || 'Erreur Edge Function.');
   }
 
   if (!data || data.error) {
@@ -89,7 +131,49 @@ export async function confirmAIAction(
   );
 
   if (error) {
-    throw error;
+    console.log('=== ENTERPRISE AGENT ERROR ===');
+    console.log('message:', error.message);
+    console.log('name:', error.name);
+    console.log('context:', (error as any)?.context);
+
+    const context = (error as any)?.context;
+
+    if (context?.clone) {
+      try {
+        const response = context.clone();
+        const text = await response.text();
+
+        console.log('EDGE RESPONSE:', text);
+
+        try {
+          const body = JSON.parse(text);
+
+          if (body?.error) {
+            throw new Error(String(body.error));
+          }
+
+          if (body?.message) {
+            throw new Error(String(body.message));
+          }
+        } catch (jsonError) {
+          if (
+            jsonError instanceof Error &&
+            jsonError.message !== 'Unexpected end of JSON input'
+          ) {
+            throw jsonError;
+          }
+        }
+      } catch (contextError) {
+        if (
+          contextError instanceof Error &&
+          contextError.message !== error.message
+        ) {
+          throw contextError;
+        }
+      }
+    }
+
+    throw new Error(error.message || 'Erreur interne de l’Agent IA.');
   }
 
   if (!data || data.error) {
@@ -125,7 +209,49 @@ export async function executeAIAction(
   );
 
   if (error) {
-    throw error;
+    console.log('=== ENTERPRISE AGENT ERROR ===');
+    console.log('message:', error.message);
+    console.log('name:', error.name);
+    console.log('context:', (error as any)?.context);
+
+    const context = (error as any)?.context;
+
+    if (context?.clone) {
+      try {
+        const response = context.clone();
+        const text = await response.text();
+
+        console.log('EDGE RESPONSE:', text);
+
+        try {
+          const body = JSON.parse(text);
+
+          if (body?.error) {
+            throw new Error(String(body.error));
+          }
+
+          if (body?.message) {
+            throw new Error(String(body.message));
+          }
+        } catch (jsonError) {
+          if (
+            jsonError instanceof Error &&
+            jsonError.message !== 'Unexpected end of JSON input'
+          ) {
+            throw jsonError;
+          }
+        }
+      } catch (contextError) {
+        if (
+          contextError instanceof Error &&
+          contextError.message !== error.message
+        ) {
+          throw contextError;
+        }
+      }
+    }
+
+    throw new Error(error.message || 'Erreur interne de l’Agent IA.');
   }
 
   if (!data || data.error) {
