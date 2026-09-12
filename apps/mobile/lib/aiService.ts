@@ -9,6 +9,8 @@ export type AIActionProposal = {
   requires_confirmation: boolean;
   payload: Record<string, unknown>;
   rationale: string | null;
+  confirmation_count?: number;
+  required_confirmations?: number;
 };
 
 export type AIDecision = {
@@ -113,6 +115,7 @@ export async function askAI(
 
 export async function confirmAIAction(
   proposalId: string,
+  options?: { cancel?: boolean },
 ): Promise<{
   proposal: AIActionProposal | null;
   decision: AIDecision | null;
@@ -126,6 +129,7 @@ export async function confirmAIAction(
     {
       body: {
         proposal_id: proposalId,
+        ...(options?.cancel ? { cancel: true } : {}),
       },
     },
   );
