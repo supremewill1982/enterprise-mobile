@@ -558,8 +558,8 @@ RÈGLES ABSOLUES :
 - Ne recherche jamais une donnée métier uniquement parce qu'un mot apparaît dans le texte d'un paramètre.
 - Un texte fourni comme titre, description ou contenu d'action doit rester ce texte.
 - Pour une tâche, "Appeler le client Gabon Télécom" est un TITRE DE TÂCHE. Cela ne signifie pas qu'il faut rechercher un client nommé Gabon Télécom.
-- Pour tasks.delete_task, le payload DOIT contenir task_id.
-- Ne propose jamais tasks.delete_task sans task_id.
+- Pour tasks.delete_task, le payload DOIT contenir id.
+- Ne propose jamais tasks.delete_task sans id.
 - Une demande comme "supprime toutes les tâches" ou "supprime les tâches" ne doit jamais être transformée en suppression globale.
 - Pour supprimer une tâche, identifie uniquement une tâche précise et utilise son id réel présent dans les données accessibles.
 - Ne renseigne jamais client_id, customer_id ou autre identifiant métier sans demande explicite ou correspondance non ambiguë.
@@ -1122,8 +1122,8 @@ Deno.serve(async (req) => {
           : {}
 
       const taskId =
-        typeof payload.task_id === 'string'
-          ? payload.task_id.trim()
+        typeof payload.id === 'string'
+          ? payload.id.trim()
           : ''
 
       if (!taskId) {
