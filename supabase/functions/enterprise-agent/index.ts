@@ -634,99 +634,160 @@ Pour une action prête :
 `
 }
 async function callModel(prompt: string) {
-  const apiUrl = Deno.env.get('AI_API_URL')
-  const apiKey = Deno.env.get('AI_API_KEY')
-  const model = Deno.env.get('AI_MODEL')
-
-  if (!apiUrl || !apiKey || !model) {
-    throw new Error(
-      'Fournisseur IA non configuré. AI_API_URL, AI_API_KEY et AI_MODEL sont requis.',
-    )
-  }
-
-  const response = await fetch(apiUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+  const providers = [
+    {
+      name: 'gemini',
+      apiUrl: Deno.env.get('AI_API_URL'),
+      apiKey: Deno.env.get('AI_API_KEY'),
+      model: Deno.env.get('AI_MODEL'),
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'Tu es un agent IA professionnel. Retourne uniquement du JSON valide.',
-        },
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      temperature: 0.2,
-    }),
-  })
+    {
+      name: 'groq',
+      apiUrl:
+        Deno.env.get('AI_SECONDARY_API_URL') ??
+        'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: Deno.env.get('AI_SECONDARY_API_KEY'),
+      model:
+        Deno.env.get('AI_SECONDARY_MODEL') ??
+        'openai/gpt-oss-20b',
+    },
+    {
+      name: 'openrouter',
+      apiUrl:
+        Deno.env.get('AI_TERTIARY_API_URL') ??
+        'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: Deno.env.get('AI_TERTIARY_API_KEY'),
+      model:
+        Deno.env.get('AI_TERTIARY_MODEL') ??
+        'openrouter/free',
+    },
+  ]
 
-  if (!response.ok) {
-    const text = await response.text()
+  const retryableStatuses = new Set([
+    408,
+    429,
+    500,
+    502,
+    503,
+    504,
+  ])
 
-    if (response.status === 429 || response.status === 503) {
-      throw new Response(
-        JSON.stringify({
-          error: 'Le service IA est temporairement indisponible. Réessayez dans quelques instants.',
-          code: 'AI_PROVIDER_UNAVAILABLE',
-          retryable: true,
-          provider_status: response.status,
+  let lastStatus = 503
+
+  for (const provider of providers) {
+    if (!provider.apiUrl || !provider.apiKey || !provider.model) {
+      continue
+    }
+
+    try {
+      const response = await fetch(provider.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${provider.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'Tu es un agent IA professionnel. Retourne uniquement du JSON valide.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          temperature: 0.2,
         }),
-        {
-          status: 503,
-          headers: { 'Content-Type': 'application/json' },
-        },
+      })
+
+      if (!response.ok) {
+        lastStatus = response.status
+        const text = await response.text()
+
+        console.error(
+          `AI provider ${provider.name} failed (${response.status}): ${text.slice(0, 500)}`,
+        )
+
+        if (retryableStatuses.has(response.status)) {
+          continue
+        }
+
+        throw new Error(
+          `Erreur fournisseur IA ${provider.name} (${response.status}).`,
+        )
+      }
+
+      const data = await response.json()
+
+      const content =
+        data?.choices?.[0]?.message?.content ??
+        data?.output_text ??
+        data?.content
+
+      if (!content) {
+        console.error(
+          `AI provider ${provider.name}: réponse vide`,
+        )
+        continue
+      }
+
+      const cleaned = String(content)
+        .replace(/^```json\s*/i, '')
+        .replace(/^```\s*/i, '')
+        .replace(/\s*```$/i, '')
+        .trim()
+
+      try {
+        const parsed = JSON.parse(cleaned)
+
+        if (
+          !parsed ||
+          typeof parsed !== 'object' ||
+          typeof parsed.answer !== 'string'
+        ) {
+          throw new Error('Format IA invalide.')
+        }
+
+        console.log(
+          `AI provider success: ${provider.name}`,
+        )
+
+        return parsed
+      } catch {
+        return {
+          answer: cleaned,
+          intent: 'question',
+          confidence: 0.5,
+          action: null,
+        }
+      }
+    } catch (error) {
+      console.error(
+        `AI provider ${provider.name} error:`,
+        error instanceof Error ? error.message : error,
       )
-    }
-
-    throw new Error(
-      `Erreur fournisseur IA (${response.status}): ${text}`,
-    )
-  }
-
-  const data = await response.json()
-
-  const content =
-    data?.choices?.[0]?.message?.content ??
-    data?.output_text ??
-    data?.content
-
-  if (!content) {
-    throw new Error('Réponse IA vide.')
-  }
-
-  const cleaned = String(content)
-    .replace(/^```json\s*/i, '')
-    .replace(/^```\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim()
-
-  try {
-    const parsed = JSON.parse(cleaned)
-
-    if (
-      !parsed ||
-      typeof parsed !== 'object' ||
-      typeof parsed.answer !== 'string'
-    ) {
-      throw new Error('Format IA invalide.')
-    }
-
-    return parsed
-  } catch {
-    return {
-      answer: cleaned,
-      intent: 'question',
-      confidence: 0.5,
-      action: null,
+      continue
     }
   }
+
+  throw new Response(
+    JSON.stringify({
+      error:
+        'Le service IA est temporairement indisponible. Réessayez dans quelques instants.',
+      code: 'AI_PROVIDER_UNAVAILABLE',
+      retryable: true,
+      provider_status: lastStatus,
+    }),
+    {
+      status: 503,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    },
+  )
 }
 
 const AI_ACTION_POLICIES: Record<string, {
