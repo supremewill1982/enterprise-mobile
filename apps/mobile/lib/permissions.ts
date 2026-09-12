@@ -39,6 +39,7 @@ export async function getCurrentMembership() {
   }
 
   return supabase
+    .schema('enterprise')
     .from('organization_members')
     .select('id, organization_id, user_id, role')
     .eq('user_id', user.id)
@@ -67,7 +68,7 @@ export async function hasPermission(
     return false;
   }
 
-  const { data, error } = await supabase.rpc('has_permission', {
+  const { data, error } = await supabase.schema('enterprise').rpc('has_permission', {
     p_organization_id: membership.organization_id,
     p_module: module,
     p_action: action,
@@ -92,6 +93,7 @@ export async function getPermissionsForCurrentUser() {
   }
 
   const { data, error } = await supabase
+    .schema('enterprise')
     .from('role_permissions')
     .select(`
       permission_id,
