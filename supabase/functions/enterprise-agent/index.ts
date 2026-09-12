@@ -128,7 +128,7 @@ async function getConversation(
   const { data, error } = await supabase
     .schema('enterprise')
     .from('ai_conversations')
-    .select('id, organization_id, user_id, title, status')
+    .select('id, organization_id, user_id, title, status, context')
     .eq('id', conversationId)
     .eq('organization_id', organizationId)
     .eq('user_id', userId)
@@ -143,6 +143,43 @@ async function getConversation(
   }
 
   return data
+}
+
+async function getConversationMessages(
+  supabase: any,
+  organizationId: string,
+  conversationId: string,
+) {
+  const { data, error } = await supabase
+    .schema('enterprise')
+    .from('ai_messages')
+    .select('role, content, metadata, created_at')
+    .eq('organization_id', organizationId)
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: false })
+    .limit(12)
+
+  if (error) throw error
+  return (data ?? []).reverse()
+}
+
+async function updateConversationContext(
+  supabase: any,
+  organizationId: string,
+  conversationId: string,
+  context: Record<string, unknown>,
+) {
+  const { error } = await supabase
+    .schema('enterprise')
+    .from('ai_conversations')
+    .update({
+      context,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversationId)
+    .eq('organization_id', organizationId)
+
+  if (error) throw error
 }
 
 async function getBusinessContext(
@@ -502,31 +539,30 @@ function buildPrompt(
   role: string,
   business: Record<string, unknown>,
   rag: unknown[],
+  conversationContext: Record<string, unknown>,
+  history: unknown[],
 ) {
   return `
 Tu es l'Agent IA opérationnel d'un logiciel de gestion d'entreprise.
 
 OBJECTIF :
-Aider l'utilisateur à comprendre son activité et à préparer
-des actions professionnelles utiles.
+Comprendre l'intention de l'utilisateur, maintenir le contexte conversationnel et préparer des actions professionnelles utiles.
 
 RÈGLES ABSOLUES :
 - Réponds en français.
 - Sois concret, court et professionnel.
 - N'invente jamais une donnée.
-- Utilise uniquement les données auxquelles l'utilisateur
-  a effectivement accès.
-- Ne révèle jamais les données d'un module absent de
-  "accessible_modules".
-- Les documents RAG appartiennent à la même organisation.
-- Si une information n'est pas disponible, dis-le.
-- Ne prétends jamais avoir exécuté une action si elle n'a
-  pas réellement été exécutée.
-- Pour toute action, prépare une proposition structurée.
-- Aucune action métier n'est exécutée par cette fonction
-  à ce stade.
-- Toute proposition devra ensuite passer par les permissions,
-  le Decision Engine et les règles de confirmation.
+- Utilise uniquement les données accessibles.
+- Ne prétends jamais avoir exécuté une action.
+- Toute action est une PROPOSITION jusqu'à confirmation/exécution.
+- Ne recherche jamais une donnée métier uniquement parce qu'un mot apparaît dans le texte d'un paramètre.
+- Un texte fourni comme titre, description ou contenu d'action doit rester ce texte.
+- Pour une tâche, "Appeler le client Gabon Télécom" est un TITRE DE TÂCHE. Cela ne signifie pas qu'il faut rechercher un client nommé Gabon Télécom.
+- Ne renseigne jamais client_id, customer_id ou autre identifiant métier sans demande explicite ou correspondance non ambiguë.
+- Si une information obligatoire manque, demande uniquement cette information.
+- due_at et priority sont facultatifs pour tasks.create_task sauf si les règles métier indiquent autrement.
+- Si le message actuel complète une action commencée au tour précédent, utilise prioritairement le contexte conversationnel.
+- "annule", "stop", "annuler", "laisse tomber" annule l'action en cours.
 
 RÔLE :
 ${role}
@@ -534,7 +570,13 @@ ${role}
 MODULES ACCESSIBLES :
 ${JSON.stringify(business.accessible_modules ?? [])}
 
-DEMANDE UTILISATEUR :
+ÉTAT DE CONVERSATION :
+${JSON.stringify(conversationContext)}
+
+HISTORIQUE RÉCENT :
+${JSON.stringify(history)}
+
+DEMANDE ACTUELLE :
 ${message}
 
 DONNÉES MÉTIER AUTORISÉES :
@@ -544,10 +586,14 @@ DOCUMENTS RAG PERTINENTS :
 ${JSON.stringify(rag)}
 
 IMPORTANT :
-- Tu ne peux proposer qu'un type d'action présent dans le catalogue autorisé.
-- Si la demande ne correspond à aucune action autorisée, retourne "action": null.
 - Ne crée jamais un nouveau type d'action.
-- Ne modifie jamais le module associé au type d'action.
+- Respecte strictement le catalogue d'actions.
+- Le RAG sert à rechercher de l'information, pas à inventer les paramètres transactionnels.
+- Si une action est en cours et qu'un paramètre manque, conserve les paramètres déjà connus.
+- Pour tasks.create_task, le champ title est obligatoire.
+- Si title manque, retourne une réponse demandant le titre et aucune action exécutable.
+- Si title est disponible, prépare l'action.
+- Le champ payload doit contenir uniquement les paramètres réellement connus.
 
 Retourne UNIQUEMENT un JSON valide :
 
@@ -555,19 +601,31 @@ Retourne UNIQUEMENT un JSON valide :
   "answer": "réponse concise",
   "intent": "question|analysis|action",
   "confidence": 0,
+  "conversation_state": {
+    "intent": "tasks.create_task|null",
+    "status": "idle|collecting|ready|cancelled",
+    "fields": {}
+  },
   "action": null
 }
 
-Pour une action :
+Pour une action prête :
 
 {
   "answer": "description de ce qui sera préparé",
   "intent": "action",
   "confidence": 0,
+  "conversation_state": {
+    "intent": "tasks.create_task",
+    "status": "ready",
+    "fields": {
+      "title": "..."
+    }
+  },
   "action": {
-    "type": "tasks.create_task|tasks.update_task|tasks.delete_task|commercial.create_customer|commercial.update_customer|commercial.create_quote|finance.create_invoice|finance.update_invoice|finance.delete_invoice|finance.create_expense|finance.approve_expense|hr.create_employee|hr.update_employee|hr.delete_employee|communication.create_message",
-    "module": "direction|finance|hr|communication|commercial|tasks|ai|profile",
-    "risk_level": "low|medium|high|critical",
+    "type": "tasks.create_task",
+    "module": "tasks",
+    "risk_level": "low",
     "requires_confirmation": true,
     "payload": {},
     "rationale": "raison"
@@ -575,7 +633,6 @@ Pour une action :
 }
 `
 }
-
 async function callModel(prompt: string) {
   const apiUrl = Deno.env.get('AI_API_URL')
   const apiKey = Deno.env.get('AI_API_KEY')
@@ -734,7 +791,10 @@ async function createProposal(
   const riskLevel = mapDecisionRisk(decision);
 
   const requiresConfirmation =
-    true;
+    decision.risk >= 3 ||
+    decision.debate ||
+    decision.arbitration ||
+    decision.human;
 
   const { data, error } = await supabase
     .schema('enterprise')
@@ -822,8 +882,10 @@ Deno.serve(async (req) => {
         ? body.conversation_id.trim()
         : null
 
+    let conversation: any = null
+
     if (conversationId) {
-      await getConversation(
+      conversation = await getConversation(
         supabase,
         organizationId,
         user.id,
@@ -844,7 +906,26 @@ Deno.serve(async (req) => {
       if (error) throw error
 
       conversationId = data.id
+
+      conversation = await getConversation(
+        supabase,
+        organizationId,
+        user.id,
+        conversationId,
+      )
     }
+
+    const conversationContext =
+      conversation?.context &&
+      typeof conversation.context === 'object'
+        ? conversation.context
+        : {}
+
+    const history = await getConversationMessages(
+      supabase,
+      organizationId,
+      conversationId,
+    )
 
     await supabase
       .schema('enterprise')
@@ -875,9 +956,73 @@ Deno.serve(async (req) => {
       role,
       business,
       rag,
+      conversationContext,
+      history,
     )
 
     const result = await callModel(prompt)
+
+    let nextContext =
+      result.conversation_state &&
+      typeof result.conversation_state === 'object'
+        ? result.conversation_state
+        : conversationContext
+
+    // Continuation déterministe d'une création de tâche :
+    // si le tour précédent demandait le titre, le message actuel EST le titre.
+    if (
+      conversationContext?.intent === 'tasks.create_task' &&
+      conversationContext?.status === 'collecting' &&
+      conversationContext?.fields &&
+      typeof conversationContext.fields === 'object' &&
+      !((conversationContext.fields as Record<string, unknown>).title)
+    ) {
+      const lower = message.toLowerCase()
+
+      if (['annule', 'annuler', 'stop', 'laisse tomber'].includes(lower)) {
+        nextContext = {
+          intent: null,
+          status: 'cancelled',
+          fields: {},
+        }
+        result.action = null
+        result.intent = 'question'
+        result.answer = 'Création de la tâche annulée.'
+      } else {
+        const previousFields =
+          conversationContext.fields as Record<string, unknown>
+
+        nextContext = {
+          intent: 'tasks.create_task',
+          status: 'ready',
+          fields: {
+            ...previousFields,
+            title: message,
+          },
+        }
+
+        result.intent = 'action'
+        result.answer = `Je prépare la tâche « ${message} ».`
+        result.action = {
+          type: 'tasks.create_task',
+          module: 'tasks',
+          risk_level: 'low',
+          requires_confirmation: true,
+          payload: {
+            ...previousFields,
+            title: message,
+          },
+          rationale: 'Création d’une tâche demandée par l’utilisateur.',
+        }
+      }
+    }
+
+    await updateConversationContext(
+      supabase,
+      organizationId,
+      conversationId,
+      nextContext,
+    )
 
     let proposal = null
     let decision: DecisionEngineDecision | null = null
@@ -889,7 +1034,14 @@ Deno.serve(async (req) => {
     if (action) {
       decision = await callDecisionEngine({
         tenantId: organizationId,
-        description: message,
+        description: JSON.stringify({
+          user_message: message,
+          action_type: action.type,
+          module: action.module,
+          payload: action.payload,
+          rationale: action.rationale,
+          conversation_context: nextContext,
+        }),
         requester: user.id,
         requestId: conversationId,
       })

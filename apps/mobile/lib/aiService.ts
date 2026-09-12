@@ -46,7 +46,7 @@ export async function askAI(
   }
 
   const { data, error } = await supabase.functions.invoke(
-    'enterprise-agent-v4',
+    'enterprise-agent',
     {
       body: {
         message: cleanMessage,
