@@ -80,7 +80,7 @@ export default function TasksScreen({
     }
 
     loadTasks();
-  }, [loadTasks]);
+  }, [loadTasks, canView]);
 
   function resetForm() {
     setTitle('');
