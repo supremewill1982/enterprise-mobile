@@ -531,7 +531,11 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   }
 
   async function handleConfirmAndExecute() {
-    if (!proposal || actionLoading) {
+    if (
+      !proposal ||
+      actionLoading ||
+      proposal.status !== 'proposed'
+    ) {
       return;
     }
 
@@ -546,10 +550,18 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         throw new Error('La proposition n’a pas pu être confirmée.');
       }
 
+      setProposal({
+        ...proposal,
+        ...confirmed.proposal,
+        status: 'confirmed',
+      });
+
       const executed = await executeAIAction(proposal.id);
 
       setProposal({
         ...proposal,
+        ...confirmed.proposal,
+        ...(executed.proposal ?? {}),
         status: 'executed',
       });
 
