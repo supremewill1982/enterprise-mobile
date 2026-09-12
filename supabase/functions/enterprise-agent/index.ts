@@ -669,6 +669,22 @@ async function callModel(prompt: string) {
 
   if (!response.ok) {
     const text = await response.text()
+
+    if (response.status === 429 || response.status === 503) {
+      throw new Response(
+        JSON.stringify({
+          error: 'Le service IA est temporairement indisponible. Réessayez dans quelques instants.',
+          code: 'AI_PROVIDER_UNAVAILABLE',
+          retryable: true,
+          provider_status: response.status,
+        }),
+        {
+          status: 503,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    }
+
     throw new Error(
       `Erreur fournisseur IA (${response.status}): ${text}`,
     )
