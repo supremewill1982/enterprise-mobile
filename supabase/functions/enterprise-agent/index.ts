@@ -558,6 +558,10 @@ RÈGLES ABSOLUES :
 - Ne recherche jamais une donnée métier uniquement parce qu'un mot apparaît dans le texte d'un paramètre.
 - Un texte fourni comme titre, description ou contenu d'action doit rester ce texte.
 - Pour une tâche, "Appeler le client Gabon Télécom" est un TITRE DE TÂCHE. Cela ne signifie pas qu'il faut rechercher un client nommé Gabon Télécom.
+- Pour tasks.delete_task, le payload DOIT contenir task_id.
+- Ne propose jamais tasks.delete_task sans task_id.
+- Une demande comme "supprime toutes les tâches" ou "supprime les tâches" ne doit jamais être transformée en suppression globale.
+- Pour supprimer une tâche, identifie uniquement une tâche précise et utilise son id réel présent dans les données accessibles.
 - Ne renseigne jamais client_id, customer_id ou autre identifiant métier sans demande explicite ou correspondance non ambiguë.
 - Si une information obligatoire manque, demande uniquement cette information.
 - due_at et priority sont facultatifs pour tasks.create_task sauf si les règles métier indiquent autrement.
@@ -1104,9 +1108,45 @@ Deno.serve(async (req) => {
     let proposal = null
     let decision: DecisionEngineDecision | null = null
 
-    const action = normalizeAction(
+    let action = normalizeAction(
       result.action,
     )
+
+    // Protection stricte des suppressions de tâches :
+    // une suppression doit toujours cibler une tâche précise.
+    if (action?.type === 'tasks.delete_task') {
+      const payload =
+        action.payload &&
+        typeof action.payload === 'object'
+          ? action.payload as Record<string, unknown>
+          : {}
+
+      const taskId =
+        typeof payload.task_id === 'string'
+          ? payload.task_id.trim()
+          : ''
+
+      if (!taskId) {
+        action = null
+        result.action = null
+        result.intent = 'question'
+        result.answer =
+          'Je ne peux pas supprimer plusieurs tâches à la fois. Indique-moi précisément quelle tâche supprimer.'
+
+        nextContext = {
+          intent: null,
+          status: 'idle',
+          fields: {},
+        }
+
+        await updateConversationContext(
+          supabase,
+          organizationId,
+          conversationId,
+          nextContext,
+        )
+      }
+    }
 
     if (action) {
       decision = await callDecisionEngine({
