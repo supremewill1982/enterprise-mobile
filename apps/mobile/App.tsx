@@ -534,7 +534,8 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     if (
       !proposal ||
       actionLoading ||
-      proposal.status !== 'proposed'
+      (proposal.status !== 'proposed' &&
+        proposal.status !== 'confirmed')
     ) {
       return;
     }
@@ -544,7 +545,35 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     setActionMessage(null);
 
     try {
-      const confirmed = await confirmAIAction(proposal.id);
+      const isBulkDelete =
+        proposal.action_type === 'tasks.delete_all_tasks';
+
+      if (isBulkDelete && proposal.status === 'proposed') {
+        const confirmed = await confirmAIAction(proposal.id);
+
+        if (!confirmed.proposal) {
+          throw new Error('La proposition n’a pas pu être confirmée.');
+        }
+
+        setProposal({
+          ...proposal,
+          ...confirmed.proposal,
+        });
+
+        setActionMessage(
+          `Première confirmation enregistrée (${confirmed.proposal.confirmation_count ?? 1}/${confirmed.proposal.required_confirmations ?? 2}). Une seconde confirmation est nécessaire.`,
+        );
+
+        return;
+      }
+
+      const confirmed =
+        proposal.status === 'proposed'
+          ? await confirmAIAction(proposal.id)
+          : {
+              proposal,
+              decision: null,
+            };
 
       if (!confirmed.proposal) {
         throw new Error('La proposition n’a pas pu être confirmée.');
@@ -553,8 +582,18 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       setProposal({
         ...proposal,
         ...confirmed.proposal,
-        status: 'confirmed',
       });
+
+      if (
+        isBulkDelete &&
+        (confirmed.proposal.confirmation_count ?? 0) <
+          (confirmed.proposal.required_confirmations ?? 2)
+      ) {
+        setActionMessage(
+          `Confirmation enregistrée (${confirmed.proposal.confirmation_count ?? 1}/${confirmed.proposal.required_confirmations ?? 2}).`,
+        );
+        return;
+      }
 
       const executed = await executeAIAction(proposal.id);
 
@@ -566,14 +605,45 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       });
 
       setActionMessage(
-        executed.message ??
-          'Action exécutée avec succès.',
+        executed.message ?? 'Action exécutée avec succès.',
       );
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
           : 'Impossible de confirmer ou d’exécuter l’action.',
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleCancelAction() {
+    if (!proposal || actionLoading) {
+      return;
+    }
+
+    setActionLoading(true);
+    setError(null);
+    setActionMessage(null);
+
+    try {
+      const cancelled = await confirmAIAction(proposal.id, {
+        cancel: true,
+      });
+
+      setProposal({
+        ...proposal,
+        ...(cancelled.proposal ?? {}),
+        status: 'cancelled',
+      });
+
+      setActionMessage('Action annulée.');
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : 'Impossible d’annuler l’action.',
       );
     } finally {
       setActionLoading(false);
@@ -692,24 +762,82 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
                     : 'En attente de validation'}
                 </Text>
 
-                {proposal.status !== 'executed' && (
-                  <Pressable
+                {proposal.status !== 'executed' &&
+                  proposal.status !== 'cancelled' && (
+                    <>
+                      {proposal.action_type === 'tasks.delete_all_tasks' && (
+                        <Text
+                          style={[
+                            styles.moduleSubtitle,
+                            { marginTop: 8, fontWeight: '700' },
+                          ]}
+                        >
+                          Confirmation : {proposal.confirmation_count ?? 0}/
+                          {proposal.required_confirmations ?? 2}
+                        </Text>
+                      )}
+
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          gap: 8,
+                          marginTop: 8,
+                        }}
+                      >
+                        <Pressable
+                          style={[
+                            styles.primaryButton,
+                            {
+                              flex: 1,
+                              marginTop: 0,
+                              backgroundColor: '#000',
+                              opacity: actionLoading ? 0.55 : 1,
+                            },
+                          ]}
+                          onPress={handleConfirmAndExecute}
+                          disabled={actionLoading}
+                        >
+                          <Text style={styles.primaryText}>
+                            {actionLoading
+                              ? 'Traitement...'
+                              : proposal.action_type ===
+                                  'tasks.delete_all_tasks' &&
+                                (proposal.confirmation_count ?? 0) === 1
+                              ? 'Confirmer la suppression'
+                              : 'Confirmer et exécuter'}
+                          </Text>
+                        </Pressable>
+
+                        <Pressable
+                          style={[
+                            styles.primaryButton,
+                            {
+                              flex: 1,
+                              marginTop: 0,
+                              backgroundColor: '#d32f2f',
+                              opacity: actionLoading ? 0.55 : 1,
+                            },
+                          ]}
+                          onPress={handleCancelAction}
+                          disabled={actionLoading}
+                        >
+                          <Text style={styles.primaryText}>
+                            Annuler
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  )}
+
+                {proposal.status === 'cancelled' && (
+                  <Text
                     style={[
-                      styles.primaryButton,
-                      {
-                        marginTop: 4,
-                        opacity: actionLoading ? 0.55 : 1,
-                      },
+                      styles.moduleSubtitle,
+                      { marginTop: 12 },
                     ]}
-                    onPress={handleConfirmAndExecute}
-                    disabled={actionLoading}
                   >
-                    <Text style={styles.primaryText}>
-                      {actionLoading
-                        ? 'Confirmation et exécution...'
-                        : 'Confirmer et exécuter'}
-                    </Text>
-                  </Pressable>
+                    Action annulée.
+                  </Text>
                 )}
 
                 {proposal.status === 'executed' && (
