@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
     )
 
     const { data: canApprove, error: permissionError } =
-      await supabase.rpc('has_permission', {
+      await supabase.schema('enterprise').rpc('has_permission', {
         p_organization_id: organizationId,
         p_module: 'ai',
         p_action: 'approve',
@@ -196,7 +196,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: canPerformAction, error: actionPermissionError } =
-      await supabase.rpc('has_permission', {
+      await supabase.schema('enterprise').rpc('has_permission', {
         p_organization_id: organizationId,
         p_module: policy.module,
         p_action: policy.permission,
