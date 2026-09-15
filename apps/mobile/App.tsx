@@ -8,6 +8,7 @@ import {
   SafeAreaView,
   ScrollView,
   StatusBar,
+  FlatList,
   StyleSheet,
   Text,
   TextInput,
@@ -33,6 +34,13 @@ import {
   executeAIAction,
   AIActionProposal,
 } from './lib/aiService';
+
+type ChatMessage = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  created_at?: string;
+};
 
 type Tab = 'Accueil' | 'Activité' | 'IA' | 'Alertes' | 'Profil';
 
@@ -100,42 +108,72 @@ function Row({
 
 function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const { role, can } = usePermissions();
-  const [counts, setCounts] = useState({ clients: 0, invoices: 0, employees: 0, tasks: 0, alerts: 0 });
+  const [counts, setCounts] = useState({
+    clients: 0,
+    invoices: 0,
+    employees: 0,
+    tasks: 0,
+    alerts: 0,
+  });
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(true);
+
+  async function loadData() {
+    const { data: session } = await supabase.auth.getSession();
+    const userId = session.session?.user.id;
+    if (!userId) return;
+
+    const { data: memberships } = await supabase
+      .schema('enterprise')
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId);
+
+    const organizationIds = (memberships ?? []).map(
+      (m) => m.organization_id,
+    );
+
+    if (!organizationIds.length) return;
+
+    const tables = [
+      'customers',
+      'invoices',
+      'employees',
+      'tasks',
+      'notifications',
+    ] as const;
+
+    const results = await Promise.all(
+      tables.map((table) =>
+        supabase
+          .schema('enterprise')
+          .from(table)
+          .select('*', { count: 'exact', head: true })
+          .in('organization_id', organizationIds),
+      ),
+    );
+
+    const { data: taskRows } = await supabase
+      .schema('enterprise')
+      .from('tasks')
+      .select('*')
+      .in('organization_id', organizationIds)
+      .order('created_at', { ascending: false })
+      .limit(8);
+
+    setCounts({
+      clients: results[0].count ?? 0,
+      invoices: results[1].count ?? 0,
+      employees: results[2].count ?? 0,
+      tasks: results[3].count ?? 0,
+      alerts: results[4].count ?? 0,
+    });
+
+    setTasks(taskRows ?? []);
+    setLoadingTasks(false);
+  }
 
   useEffect(() => {
-    async function loadData() {
-      const { data: session } = await supabase.auth.getSession();
-      const userId = session.session?.user.id;
-      if (!userId) return;
-
-      const { data: memberships } = await supabase
-        .schema("enterprise")
-        .from("organization_members")
-        .select("organization_id")
-        .eq("user_id", userId);
-
-      const organizationIds = (memberships ?? []).map((m) => m.organization_id);
-      if (!organizationIds.length) return;
-
-      const tables = ["customers", "invoices", "employees", "tasks", "notifications"] as const;
-      const results = await Promise.all(
-        tables.map((table) =>
-          supabase
-            .schema("enterprise")
-            .from(table)
-            .select("*", { count: "exact", head: true })
-            .in("organization_id", organizationIds)
-        )
-      );
-
-      setCounts({
-        clients: results[0].count ?? 0,
-        invoices: results[1].count ?? 0,
-        employees: results[2].count ?? 0,
-        tasks: results[3].count ?? 0,
-        alerts: results[4].count ?? 0,
-      });
-    }
     loadData();
   }, []);
 
@@ -148,17 +186,17 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         <View>
           <Text style={styles.eyebrow}>ESPACE ENTREPRISE</Text>
           <Text style={styles.title}>
-            {role === "OWNER" || role === "ADMIN"
-              ? "Pilotage"
-              : role === "FINANCE"
-              ? "Finance"
-              : role === "HR"
-              ? "Ressources humaines"
-              : role === "COMMERCIAL"
-              ? "Commercial"
-              : role === "MANAGER"
-              ? "Mon activité"
-              : "Mon espace"}
+            {role === 'OWNER' || role === 'ADMIN'
+              ? 'Pilotage'
+              : role === 'FINANCE'
+              ? 'Finance'
+              : role === 'HR'
+              ? 'Ressources humaines'
+              : role === 'COMMERCIAL'
+              ? 'Commercial'
+              : role === 'MANAGER'
+              ? 'Mon activité'
+              : 'Mon espace'}
           </Text>
         </View>
 
@@ -167,10 +205,9 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         </View>
       </View>
 
-      {(can("direction", "view") || can("finance", "view")) && (
+      {(can('direction', 'view') || can('finance', 'view')) && (
         <>
           <Section>VUE D’ENSEMBLE</Section>
-
           <Card>
             <Text style={styles.cardLabel}>Chiffre d’affaires</Text>
             <Text style={styles.revenue}>— FCFA</Text>
@@ -182,35 +219,88 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       <Section>À TRAITER</Section>
 
       <View style={styles.metrics}>
-        {can("finance", "view") && (
+        {can('finance', 'view') && (
           <Metric value={String(counts.invoices)} label="Factures" />
         )}
-        {can("tasks", "view") && (
+        {can('tasks', 'view') && (
           <Metric value={String(counts.tasks)} label="Tâches" />
         )}
         <Metric value={String(counts.alerts)} label="Alertes" />
       </View>
+
+      {can('tasks', 'view') && (
+        <>
+          <Section>TÂCHES</Section>
+
+          <Card>
+            {loadingTasks ? (
+              <Text style={styles.rowSubtitle}>Chargement…</Text>
+            ) : tasks.length === 0 ? (
+              <Text style={styles.rowSubtitle}>
+                Aucune tâche à traiter.
+              </Text>
+            ) : (
+              tasks.map((task) => (
+                <View key={task.id} style={styles.taskRow}>
+                  <View style={styles.taskMain}>
+                    <Text style={styles.taskTitle}>
+                      {task.title ?? task.name ?? 'Tâche sans titre'}
+                    </Text>
+
+                    <Text style={styles.taskMeta}>
+                      {task.priority
+                        ? `Priorité : ${task.priority}`
+                        : task.status
+                        ? `Statut : ${task.status}`
+                        : 'À traiter'}
+                      {task.due_date
+                        ? ` · Échéance : ${task.due_date}`
+                        : ''}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.taskStatus}>
+                    {task.status ?? 'ouverte'}
+                  </Text>
+                </View>
+              ))
+            )}
+
+            <Pressable
+              style={styles.linkButton}
+              onPress={() => onNavigate('Activité')}
+            >
+              <Text style={styles.linkText}>Voir toutes les tâches</Text>
+              <Text style={styles.arrow}>→</Text>
+            </Pressable>
+          </Card>
+        </>
+      )}
 
       <Section>DÉCISION IA</Section>
 
       <Card>
         <View style={styles.aiHeader}>
           <View style={styles.dot} />
-          <Text style={styles.aiTitle}>Attention requise</Text>
+          <Text style={styles.aiTitle}>Assistant opérationnel</Text>
         </View>
 
         <Text style={styles.aiText}>
-          Aucune donnée de décision chargée.
+          Posez une question ou demandez à l’IA de préparer une action.
         </Text>
 
-        <TouchableOpacity style={styles.linkButton} onPress={() => onNavigate("IA")}>
-          <Text style={styles.linkText}>Voir les décisions</Text>
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={() => onNavigate('IA')}
+        >
+          <Text style={styles.linkText}>Ouvrir l’assistant IA</Text>
           <Text style={styles.arrow}>→</Text>
         </TouchableOpacity>
       </Card>
     </ScrollView>
   );
 }
+
 
 function Metric({ value, label }: { value: string; label: string }) {
   return (
@@ -490,35 +580,109 @@ function ActivityScreen() {
 
 /* ───────────────────────── IA ───────────────────────── */
 
-function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
+function AIScreen({ onNavigate: _onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const [message, setMessage] = React.useState('');
-  const [answer, setAnswer] = React.useState('');
+  const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = React.useState<string | null>(null);
+  const [conversations, setConversations] = React.useState<any[]>([]);
   const [proposal, setProposal] = React.useState<AIActionProposal | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [actionLoading, setActionLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [actionMessage, setActionMessage] = React.useState<string | null>(null);
+  const [riskWarning, setRiskWarning] = React.useState(false);
+  const [listVisible, setListVisible] = React.useState(false);
+
+  async function loadConversations() {
+    const { data: session } = await supabase.auth.getSession();
+    const userId = session.session?.user.id;
+    if (!userId) return;
+
+    const { data } = await supabase
+      .schema('enterprise')
+      .from('ai_conversations')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+
+    setConversations(data ?? []);
+  }
+
+  async function loadMessages(id: string) {
+    const { data } = await supabase
+      .schema('enterprise')
+      .from('ai_messages')
+      .select('*')
+      .eq('conversation_id', id)
+      .order('created_at', { ascending: true });
+
+    setMessages(
+      (data ?? []).map((row) => ({
+        id: row.id,
+        role: row.role === 'user' ? 'user' : 'assistant',
+        content: row.content ?? '',
+        created_at: row.created_at,
+      })),
+    );
+
+    setConversationId(id);
+    setProposal(null);
+    setActionMessage(null);
+    setError(null);
+    setListVisible(false);
+  }
+
+  function newChat() {
+    setConversationId(null);
+    setMessages([]);
+    setProposal(null);
+    setActionMessage(null);
+    setError(null);
+    setMessage('');
+    setListVisible(false);
+  }
+
+  useEffect(() => {
+    loadConversations();
+  }, []);
 
   async function handleAsk() {
     const cleanMessage = message.trim();
 
-    if (!cleanMessage || loading || actionLoading) {
-      return;
-    }
+    if (!cleanMessage || loading || actionLoading) return;
 
+    const temporaryId = `local-${Date.now()}`;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: temporaryId,
+        role: 'user',
+        content: cleanMessage,
+      },
+    ]);
+
+    setMessage('');
     setLoading(true);
     setError(null);
     setActionMessage(null);
-    setProposal(null);
 
     try {
       const result = await askAI(cleanMessage, conversationId);
 
       setConversationId(result.conversation_id);
-      setAnswer(result.answer);
+
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: result.answer,
+        },
+      ]);
+
       setProposal(result.action_proposal);
-      setMessage('');
+      await loadConversations();
     } catch (err) {
       setError(
         err instanceof Error
@@ -531,13 +695,13 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   }
 
   async function handleConfirmAndExecute() {
-    if (
-      !proposal ||
-      actionLoading ||
-      (proposal.status !== 'proposed' &&
-        proposal.status !== 'confirmed')
-    ) {
-      return;
+    if (!proposal || actionLoading) return;
+
+    if (proposal.risk_level === 'high' || proposal.risk_level === 'critical') {
+      if (!riskWarning) {
+        setRiskWarning(true);
+        return;
+      }
     }
 
     setActionLoading(true);
@@ -545,61 +709,34 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     setActionMessage(null);
 
     try {
-      const isBulkDelete =
-        proposal.action_type === 'tasks.delete_all_tasks';
-
-      if (isBulkDelete && proposal.status === 'proposed') {
-        const confirmed = await confirmAIAction(proposal.id);
-
-        if (!confirmed.proposal) {
-          throw new Error('La proposition n’a pas pu être confirmée.');
-        }
-
-        setProposal({
-          ...proposal,
-          ...confirmed.proposal,
-        });
-
-        setActionMessage(
-          `Première confirmation enregistrée (${confirmed.proposal.confirmation_count ?? 1}/${confirmed.proposal.required_confirmations ?? 2}). Une seconde confirmation est nécessaire.`,
-        );
-
-        return;
-      }
-
-      const confirmed =
-        proposal.status === 'proposed'
-          ? await confirmAIAction(proposal.id)
-          : {
-              proposal,
-              decision: null,
-            };
+      const confirmed = await confirmAIAction(proposal.id);
 
       if (!confirmed.proposal) {
         throw new Error('La proposition n’a pas pu être confirmée.');
       }
 
-      setProposal({
+      const updated = {
         ...proposal,
         ...confirmed.proposal,
-      });
+      };
 
-      if (
-        isBulkDelete &&
-        (confirmed.proposal.confirmation_count ?? 0) <
-          (confirmed.proposal.required_confirmations ?? 2)
-      ) {
+      setProposal(updated);
+
+      const count = updated.confirmation_count ?? 0;
+      const required = updated.required_confirmations ?? 1;
+
+      if (count < required) {
         setActionMessage(
-          `Confirmation enregistrée (${confirmed.proposal.confirmation_count ?? 1}/${confirmed.proposal.required_confirmations ?? 2}).`,
+          `Confirmation ${count}/${required}. Une confirmation supplémentaire est nécessaire.`,
         );
+        setRiskWarning(false);
         return;
       }
 
       const executed = await executeAIAction(proposal.id);
 
       setProposal({
-        ...proposal,
-        ...confirmed.proposal,
+        ...updated,
         ...(executed.proposal ?? {}),
         status: 'executed',
       });
@@ -607,6 +744,7 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
       setActionMessage(
         executed.message ?? 'Action exécutée avec succès.',
       );
+      setRiskWarning(false);
     } catch (err) {
       setError(
         err instanceof Error
@@ -619,320 +757,268 @@ function AIScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   }
 
   async function handleCancelAction() {
-    if (!proposal || actionLoading) {
-      return;
-    }
+    if (!proposal || actionLoading) return;
 
-    setActionLoading(true);
-    setError(null);
-    setActionMessage(null);
+    Alert.alert(
+      'Annuler cette action ?',
+      'L’action ne sera pas exécutée.',
+      [
+        { text: 'Retour', style: 'cancel' },
+        {
+          text: 'Annuler l’action',
+          style: 'destructive',
+          onPress: async () => {
+            setActionLoading(true);
 
-    try {
-      const cancelled = await confirmAIAction(proposal.id, {
-        cancel: true,
-      });
+            try {
+              const cancelled = await confirmAIAction(proposal.id, {
+                cancel: true,
+              });
 
-      setProposal({
-        ...proposal,
-        ...(cancelled.proposal ?? {}),
-        status: 'cancelled',
-      });
+              setProposal({
+                ...proposal,
+                ...(cancelled.proposal ?? {}),
+                status: 'cancelled',
+              });
 
-      setActionMessage('Action annulée.');
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Impossible d’annuler l’action.',
-      );
-    } finally {
-      setActionLoading(false);
-    }
+              setActionMessage(
+                'Action annulée. Aucune modification n’a été effectuée.',
+              );
+              setRiskWarning(false);
+            } catch (err) {
+              setError(
+                err instanceof Error
+                  ? err.message
+                  : 'Impossible d’annuler l’action.',
+              );
+            } finally {
+              setActionLoading(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   return (
-    <ScrollView
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.scroll}
+    <KeyboardAvoidingView
+      style={styles.aiContainer}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <ScreenHeader
-        title="Assistant IA"
-        subtitle="Votre assistant opérationnel"
-      />
+      <View style={styles.aiTopBar}>
+        <View>
+          <Text style={styles.screenTitle}>Assistant IA</Text>
+          <Text style={styles.screenSubtitle}>
+            Votre assistant opérationnel
+          </Text>
+        </View>
 
-      <Card>
-        <Text style={styles.moduleTitle}>Que voulez-vous faire ?</Text>
+        <View style={styles.aiTopActions}>
+          <Pressable
+            style={styles.aiTopButton}
+            onPress={() => setListVisible((v) => !v)}
+          >
+            <Text style={styles.aiTopButtonText}>Historique</Text>
+          </Pressable>
 
-        <Text style={styles.moduleSubtitle}>
-          Posez une question sur votre entreprise ou demandez à l’Agent
-          de préparer une action.
-        </Text>
+          <Pressable style={styles.aiTopButton} onPress={newChat}>
+            <Text style={styles.aiTopButtonText}>+ Nouveau</Text>
+          </Pressable>
+        </View>
+      </View>
 
+      {listVisible && (
+        <Card style={styles.conversationPanel}>
+          <Text style={styles.moduleTitle}>Conversations</Text>
+
+          <ScrollView style={{ maxHeight: 190 }}>
+            {conversations.length === 0 ? (
+              <Text style={styles.rowSubtitle}>
+                Aucune conversation enregistrée.
+              </Text>
+            ) : (
+              conversations.map((conversation) => (
+                <Pressable
+                  key={conversation.id}
+                  style={styles.conversationRow}
+                  onPress={() => loadMessages(conversation.id)}
+                >
+                  <Text style={styles.conversationTitle}>
+                    {conversation.title || 'Nouvelle conversation'}
+                  </Text>
+                </Pressable>
+              ))
+            )}
+          </ScrollView>
+        </Card>
+      )}
+
+      <ScrollView
+        style={styles.chatScroll}
+        contentContainerStyle={styles.chatContent}
+        keyboardShouldPersistTaps="handled"
+      >
+        {messages.length === 0 && (
+          <View style={styles.emptyChat}>
+            <Text style={styles.emptyChatTitle}>Comment puis-je vous aider ?</Text>
+            <Text style={styles.emptyChatText}>
+              Posez une question sur votre entreprise ou demandez à l’IA de préparer une action.
+            </Text>
+          </View>
+        )}
+
+        {messages.map((item) => (
+          <View
+            key={item.id}
+            style={[
+              styles.messageRow,
+              item.role === 'user'
+                ? styles.messageRowUser
+                : styles.messageRowAssistant,
+            ]}
+          >
+            <View
+              style={[
+                styles.messageBubble,
+                item.role === 'user'
+                  ? styles.userBubble
+                  : styles.assistantBubble,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.messageText,
+                  item.role === 'user'
+                    ? styles.userMessageText
+                    : styles.assistantMessageText,
+                ]}
+              >
+                {item.content}
+              </Text>
+            </View>
+          </View>
+        ))}
+
+        {loading && (
+          <View style={styles.messageRowAssistant}>
+            <View style={styles.assistantBubble}>
+              <Text style={styles.messageText}>Analyse en cours…</Text>
+            </View>
+          </View>
+        )}
+
+        {proposal &&
+          proposal.status !== 'executed' &&
+          proposal.status !== 'cancelled' && (
+            <Card style={styles.actionCard}>
+              <Text style={styles.moduleTitle}>Action proposée</Text>
+
+              <Text style={styles.moduleSubtitle}>
+                {proposal.rationale ??
+                  'Cette action nécessite votre validation.'}
+              </Text>
+
+              <Text style={styles.actionRisk}>
+                Risque : {proposal.risk_level}
+              </Text>
+
+              {riskWarning && (
+                <View style={styles.riskWarning}>
+                  <Text style={styles.riskWarningTitle}>
+                    Attention
+                  </Text>
+                  <Text style={styles.riskWarningText}>
+                    Cette action peut entraîner une perte de données.
+                    Voulez-vous vraiment continuer ?
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.actionButtons}>
+                <Pressable
+                  style={styles.primaryButton}
+                  onPress={handleConfirmAndExecute}
+                  disabled={actionLoading}
+                >
+                  <Text style={styles.primaryText}>
+                    {riskWarning
+                      ? 'Confirmer malgré le risque'
+                      : 'Continuer'}
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  style={styles.cancelButton}
+                  onPress={handleCancelAction}
+                  disabled={actionLoading}
+                >
+                  <Text style={styles.cancelButtonText}>Annuler</Text>
+                </Pressable>
+              </View>
+
+              {actionMessage && (
+                <Text style={styles.actionMessage}>
+                  {actionMessage}
+                </Text>
+              )}
+            </Card>
+          )}
+
+        {proposal?.status === 'cancelled' && (
+          <Card style={styles.actionCard}>
+            <Text style={styles.success}>
+              Action annulée. Aucune modification n’a été effectuée.
+            </Text>
+          </Card>
+        )}
+
+        {proposal?.status === 'executed' && (
+          <Card style={styles.actionCard}>
+            <Text style={styles.success}>
+              Action exécutée avec succès.
+            </Text>
+          </Card>
+        )}
+
+        {error && (
+          <Text style={styles.aiError}>{error}</Text>
+        )}
+      </ScrollView>
+
+      <View style={styles.composer}>
         <TextInput
           value={message}
           onChangeText={setMessage}
-          placeholder="Ex. Quels sont mes impayés ?"
-          placeholderTextColor="#999"
+          placeholder="Écrire un message…"
+          placeholderTextColor={C.light}
           multiline
           editable={!loading && !actionLoading}
-          style={[
-            styles.card,
-            {
-              minHeight: 100,
-              marginTop: 16,
-              textAlignVertical: 'top',
-            },
-          ]}
+          scrollEnabled
+          style={styles.composerInput}
         />
 
         <Pressable
           style={[
-            styles.primaryButton,
+            styles.sendButton,
             {
               opacity:
                 loading || actionLoading || !message.trim()
-                  ? 0.55
+                  ? 0.45
                   : 1,
             },
           ]}
           onPress={handleAsk}
-          disabled={loading || actionLoading || !message.trim()}
-        >
-          <Text style={styles.primaryText}>
-            {loading ? 'Analyse en cours...' : 'Demander à l’IA'}
-          </Text>
-        </Pressable>
-
-        {error && (
-          <Text
-            style={[
-              styles.moduleSubtitle,
-              {
-                marginTop: 14,
-                marginBottom: 0,
-              },
-            ]}
-          >
-            {error}
-          </Text>
-        )}
-      </Card>
-
-      {answer ? (
-        <Card>
-          <Text style={styles.moduleTitle}>Réponse</Text>
-
-          <Text style={styles.moduleSubtitle}>
-            {answer}
-          </Text>
-
-          {proposal && (
-            <View style={{ marginTop: 8 }}>
-              <Text style={styles.moduleTitle}>
-                Action préparée
-              </Text>
-
-              <Text style={styles.moduleSubtitle}>
-                {proposal.rationale ??
-                  'L’Agent a préparé une action nécessitant votre validation.'}
-              </Text>
-
-              <View
-                style={[
-                  styles.card,
-                  {
-                    marginTop: 4,
-                  },
-                ]}
-              >
-                <Text style={styles.metricLabel}>
-                  {proposal.action_type}
-                </Text>
-
-                <Text style={styles.moduleSubtitle}>
-                  Niveau de risque : {proposal.risk_level}
-                </Text>
-
-                <Text style={styles.moduleSubtitle}>
-                  Statut :{' '}
-                  {proposal.status === 'executed'
-                    ? 'Exécutée'
-                    : proposal.status === 'confirmed'
-                    ? 'Confirmée'
-                    : 'En attente de validation'}
-                </Text>
-
-                {proposal.status !== 'executed' &&
-                  proposal.status !== 'cancelled' && (
-                    <>
-                      {proposal.action_type === 'tasks.delete_all_tasks' && (
-                        <Text
-                          style={[
-                            styles.moduleSubtitle,
-                            { marginTop: 8, fontWeight: '700' },
-                          ]}
-                        >
-                          Confirmation : {proposal.confirmation_count ?? 0}/
-                          {proposal.required_confirmations ?? 2}
-                        </Text>
-                      )}
-
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          gap: 8,
-                          marginTop: 8,
-                        }}
-                      >
-                        <Pressable
-                          style={[
-                            styles.primaryButton,
-                            {
-                              flex: 1,
-                              marginTop: 0,
-                              backgroundColor: '#000',
-                              opacity: actionLoading ? 0.55 : 1,
-                            },
-                          ]}
-                          onPress={handleConfirmAndExecute}
-                          disabled={actionLoading}
-                        >
-                          <Text style={styles.primaryText}>
-                            {actionLoading
-                              ? 'Traitement...'
-                              : proposal.action_type ===
-                                  'tasks.delete_all_tasks' &&
-                                (proposal.confirmation_count ?? 0) === 1
-                              ? 'Confirmer la suppression'
-                              : 'Confirmer et exécuter'}
-                          </Text>
-                        </Pressable>
-
-                        <Pressable
-                          style={[
-                            styles.primaryButton,
-                            {
-                              flex: 1,
-                              marginTop: 0,
-                              backgroundColor: '#d32f2f',
-                              opacity: actionLoading ? 0.55 : 1,
-                            },
-                          ]}
-                          onPress={handleCancelAction}
-                          disabled={actionLoading}
-                        >
-                          <Text style={styles.primaryText}>
-                            Annuler
-                          </Text>
-                        </Pressable>
-                      </View>
-                    </>
-                  )}
-
-                {proposal.status === 'cancelled' && (
-                  <Text
-                    style={[
-                      styles.moduleSubtitle,
-                      { marginTop: 12 },
-                    ]}
-                  >
-                    Action annulée.
-                  </Text>
-                )}
-
-                {proposal.status === 'executed' && (
-                  <Text
-                    style={[
-                      styles.success,
-                      {
-                        marginTop: 12,
-                      },
-                    ]}
-                  >
-                    Action exécutée avec succès.
-                  </Text>
-                )}
-
-                {actionMessage && (
-                  <Text
-                    style={[
-                      styles.moduleSubtitle,
-                      {
-                        marginTop: 12,
-                        marginBottom: 0,
-                      },
-                    ]}
-                  >
-                    {actionMessage}
-                  </Text>
-                )}
-              </View>
-            </View>
-          )}
-        </Card>
-      ) : null}
-
-      <Card>
-        <Text style={styles.moduleTitle}>Suggestions</Text>
-
-        <Pressable
-          style={styles.card}
-          onPress={() =>
-            setMessage('Prépare-moi un résumé de mon entreprise.')
+          disabled={
+            loading || actionLoading || !message.trim()
           }
         >
-          <Text style={styles.metricLabel}>
-            Résume-moi la situation de l’entreprise
-          </Text>
+          <Text style={styles.sendButtonText}>↑</Text>
         </Pressable>
-
-        <Pressable
-          style={styles.card}
-          onPress={() =>
-            setMessage('Quelles sont les tâches prioritaires aujourd’hui ?')
-          }
-        >
-          <Text style={styles.metricLabel}>
-            Quelles sont mes priorités ?
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.card}
-          onPress={() =>
-            setMessage('Quels sont les éléments importants à surveiller ?')
-          }
-        >
-          <Text style={styles.metricLabel}>
-            Que dois-je surveiller ?
-          </Text>
-        </Pressable>
-      </Card>
-
-      <Card>
-        <Text style={styles.moduleTitle}>Accès rapide</Text>
-
-        <Pressable
-          style={styles.card}
-          onPress={() => onNavigate('Activité')}
-        >
-          <Text style={styles.metricLabel}>
-            Voir l’activité de l’entreprise
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={styles.card}
-          onPress={() => onNavigate('Alertes')}
-        >
-          <Text style={styles.metricLabel}>
-            Voir les alertes
-          </Text>
-        </Pressable>
-      </Card>
-    </ScrollView>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
+
 
 /* ───────────────────────── ALERTES ───────────────────────── */
 
@@ -1827,6 +1913,267 @@ const styles = StyleSheet.create({
 
   tabTextActive: {
     color: C.text,
+    fontWeight: '700',
+  },
+
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+
+  taskMain: {
+    flex: 1,
+  },
+
+  taskTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  taskMeta: {
+    marginTop: 4,
+    fontSize: 12,
+    color: C.muted,
+  },
+
+  taskStatus: {
+    marginLeft: 8,
+    fontSize: 11,
+    color: C.muted,
+  },
+
+  aiContainer: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+
+  aiTopBar: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  aiTopActions: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+
+  aiTopButton: {
+    borderWidth: 1,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+
+  aiTopButtonText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  conversationPanel: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+  },
+
+  conversationRow: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+  },
+
+  conversationTitle: {
+    fontSize: 13,
+    color: C.text,
+    fontWeight: '600',
+  },
+
+  chatScroll: {
+    flex: 1,
+  },
+
+  chatContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+  },
+
+  emptyChat: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 30,
+    paddingTop: 100,
+  },
+
+  emptyChatTitle: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: C.text,
+    textAlign: 'center',
+  },
+
+  emptyChatText: {
+    marginTop: 8,
+    fontSize: 14,
+    lineHeight: 20,
+    color: C.muted,
+    textAlign: 'center',
+  },
+
+  messageRow: {
+    width: '100%',
+    marginVertical: 5,
+  },
+
+  messageRowUser: {
+    alignItems: 'flex-end',
+  },
+
+  messageRowAssistant: {
+    alignItems: 'flex-start',
+  },
+
+  messageBubble: {
+    maxWidth: '86%',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+
+  userBubble: {
+    backgroundColor: C.text,
+  },
+
+  assistantBubble: {
+    backgroundColor: C.surface,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+
+  messageText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  userMessageText: {
+    color: C.surface,
+  },
+
+  assistantMessageText: {
+    color: C.text,
+  },
+
+  actionCard: {
+    marginTop: 10,
+  },
+
+  actionRisk: {
+    marginBottom: 12,
+    fontSize: 13,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  riskWarning: {
+    padding: 13,
+    borderRadius: 14,
+    backgroundColor: '#FFF4E5',
+    borderWidth: 1,
+    borderColor: '#E5C58A',
+    marginBottom: 12,
+  },
+
+  riskWarningTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: C.text,
+    marginBottom: 4,
+  },
+
+  riskWarningText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: C.text,
+  },
+
+  actionButtons: {
+    gap: 8,
+  },
+
+  cancelButton: {
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+  },
+
+  cancelButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+  },
+
+  actionMessage: {
+    marginTop: 10,
+    fontSize: 13,
+    color: C.muted,
+  },
+
+  aiError: {
+    margin: 12,
+    fontSize: 13,
+    color: '#B42318',
+  },
+
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 18 : 10,
+    backgroundColor: C.surface,
+    borderTopWidth: 1,
+    borderTopColor: C.border,
+  },
+
+  composerInput: {
+    flex: 1,
+    maxHeight: 110,
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: C.border,
+    borderRadius: 18,
+    paddingHorizontal: 15,
+    paddingTop: 12,
+    paddingBottom: 10,
+    fontSize: 14,
+    color: C.text,
+    backgroundColor: C.bg,
+  },
+
+  sendButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.text,
+  },
+
+  sendButtonText: {
+    color: C.surface,
+    fontSize: 22,
     fontWeight: '700',
   },
 });

@@ -16,6 +16,7 @@ const AI_ACTION_POLICIES: Record<string, {
   'tasks.create_task': { module: 'tasks', permission: 'create' },
   'tasks.update_task': { module: 'tasks', permission: 'edit' },
   'tasks.delete_task': { module: 'tasks', permission: 'delete' },
+  'tasks.delete_all_tasks': { module: 'tasks', permission: 'delete' },
   'commercial.create_customer': { module: 'commercial', permission: 'create' },
   'commercial.update_customer': { module: 'commercial', permission: 'edit' },
   'commercial.create_quote': { module: 'commercial', permission: 'create' },
@@ -214,6 +215,47 @@ Deno.serve(async (req) => {
     }
 
     const decision = proposal.decision ?? {}
+    const highRisk =
+      proposal.risk_level === 'high' ||
+      proposal.risk_level === 'critical'
+    const bulkDelete = proposal.action_type === 'tasks.delete_all_tasks'
+    const requiredConfirmations =
+      highRisk || bulkDelete ? 2 : 1
+
+    const currentCount =
+      Number((proposal as any).confirmation_count ?? 0)
+
+    const nextCount = currentCount + 1
+
+    if (nextCount < requiredConfirmations) {
+      const { data: updatedProposal, error: updateError } =
+        await supabase
+          .schema('enterprise')
+          .from('ai_action_proposals')
+          .update({
+            confirmation_count: nextCount,
+            required_confirmations: requiredConfirmations,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', proposal.id)
+          .eq('organization_id', organizationId)
+          .eq('status', 'proposed')
+          .select(
+            'id,organization_id,action_type,module,risk_level,status,requires_confirmation,payload,rationale,decision,confirmation_count,required_confirmations,updated_at',
+          )
+          .single()
+
+      if (updateError) throw updateError
+
+      return json({
+        success: true,
+        requires_second_confirmation: true,
+        message:
+          'Première confirmation enregistrée. Une seconde confirmation est requise avant toute exécution.',
+        proposal: updatedProposal,
+        decision,
+      })
+    }
 
     const { data: updatedProposal, error: updateError } =
       await supabase
@@ -221,13 +263,15 @@ Deno.serve(async (req) => {
         .from('ai_action_proposals')
         .update({
           status: 'confirmed',
+          confirmation_count: nextCount,
+          required_confirmations: requiredConfirmations,
           updated_at: new Date().toISOString(),
         })
         .eq('id', proposal.id)
         .eq('organization_id', organizationId)
         .eq('status', 'proposed')
         .select(
-          'id,organization_id,action_type,module,risk_level,status,requires_confirmation,payload,rationale,decision,updated_at',
+          'id,organization_id,action_type,module,risk_level,status,requires_confirmation,payload,rationale,decision,confirmation_count,required_confirmations,updated_at',
         )
         .single()
 
@@ -235,7 +279,9 @@ Deno.serve(async (req) => {
 
     return json({
       success: true,
-      message: 'Action confirmée. Aucune exécution n’a encore été effectuée.',
+      requires_second_confirmation: false,
+      message:
+        'Action confirmée. Aucune exécution n’a encore été effectuée.',
       proposal: updatedProposal,
       decision,
     })
