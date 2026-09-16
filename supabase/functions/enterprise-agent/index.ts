@@ -1236,12 +1236,16 @@ Deno.serve(async (req) => {
 
     console.error('enterprise-agent error:', error)
 
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'message' in error
+          ? String((error as { message?: unknown }).message ?? 'Erreur interne')
+          : 'Erreur interne'
+
     return json(
       {
-        error:
-          error instanceof Error
-            ? error.message
-            : 'Erreur interne',
+        error: errorMessage,
       },
       500,
     )
