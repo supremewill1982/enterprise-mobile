@@ -23,6 +23,12 @@ const STATUS = {
   done: 'Terminée',
 } as const;
 
+const STATUS_STYLE = {
+  todo: { backgroundColor: '#FEE2E2', color: '#B91C1C' },
+  in_progress: { backgroundColor: '#FFEDD5', color: '#C2410C' },
+  done: { backgroundColor: '#DCFCE7', color: '#15803D' },
+} as const;
+
 const PRIORITY = {
   low: 'Basse',
   normal: 'Normale',
@@ -279,8 +285,24 @@ export default function TasksScreen({
                 ) : null}
 
                 <View style={styles.badges}>
-                  <View style={styles.badge}>
-                    <Text style={styles.badgeText}>
+                  <View
+                    style={[
+                      styles.badge,
+                      STATUS_STYLE[task.status as keyof typeof STATUS_STYLE] ??
+                        STATUS_STYLE.todo,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        {
+                          color:
+                            STATUS_STYLE[
+                              task.status as keyof typeof STATUS_STYLE
+                            ]?.color ?? STATUS_STYLE.todo.color,
+                        },
+                      ]}
+                    >
                       {STATUS[task.status as keyof typeof STATUS] ??
                         task.status}
                     </Text>

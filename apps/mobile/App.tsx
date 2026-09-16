@@ -173,6 +173,40 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     setLoadingTasks(false);
   }
 
+  const activeTasks = tasks.filter(
+    (task) => !['done', 'completed', 'termine', 'terminée', 'finished'].includes(
+      String(task.status ?? '').toLowerCase(),
+    ),
+  );
+
+  function taskStatusLabel(status?: string | null) {
+    const value = String(status ?? '').toLowerCase();
+
+    if (value === 'done' || value === 'completed' || value === 'termine' || value === 'terminée') {
+      return 'Terminée';
+    }
+
+    if (value === 'in_progress' || value === 'doing' || value === 'in-progress') {
+      return 'En cours';
+    }
+
+    return 'À faire';
+  }
+
+  function taskStatusColor(status?: string | null) {
+    const value = String(status ?? '').toLowerCase();
+
+    if (value === 'done' || value === 'completed' || value === 'termine' || value === 'terminée') {
+      return '#15803D';
+    }
+
+    if (value === 'in_progress' || value === 'doing' || value === 'in-progress') {
+      return '#C2410C';
+    }
+
+    return '#B91C1C';
+  }
+
   useEffect(() => {
     loadData();
   }, []);
@@ -223,7 +257,7 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
           <Metric value={String(counts.invoices)} label="Factures" />
         )}
         {can('tasks', 'view') && (
-          <Metric value={String(counts.tasks)} label="Tâches" />
+          <Metric value={String(activeTasks.length)} label="Tâches" />
         )}
         <Metric value={String(counts.alerts)} label="Alertes" />
       </View>
@@ -235,12 +269,12 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
           <Card>
             {loadingTasks ? (
               <Text style={styles.rowSubtitle}>Chargement…</Text>
-            ) : tasks.length === 0 ? (
+            ) : activeTasks.length === 0 ? (
               <Text style={styles.rowSubtitle}>
                 Aucune tâche à traiter.
               </Text>
             ) : (
-              tasks.map((task) => (
+              activeTasks.map((task) => (
                 <View key={task.id} style={styles.taskRow}>
                   <View style={styles.taskMain}>
                     <Text style={styles.taskTitle}>
@@ -250,8 +284,6 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
                     <Text style={styles.taskMeta}>
                       {task.priority
                         ? `Priorité : ${task.priority}`
-                        : task.status
-                        ? `Statut : ${task.status}`
                         : 'À traiter'}
                       {task.due_date
                         ? ` · Échéance : ${task.due_date}`
@@ -259,8 +291,13 @@ function HomeScreen({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
                     </Text>
                   </View>
 
-                  <Text style={styles.taskStatus}>
-                    {task.status ?? 'ouverte'}
+                  <Text
+                    style={[
+                      styles.taskStatus,
+                      { color: taskStatusColor(task.status) },
+                    ]}
+                  >
+                    {taskStatusLabel(task.status)}
                   </Text>
                 </View>
               ))
@@ -697,11 +734,16 @@ function AIScreen({ onNavigate: _onNavigate }: { onNavigate: (tab: Tab) => void 
   async function handleConfirmAndExecute() {
     if (!proposal || actionLoading) return;
 
-    if (proposal.risk_level === 'high' || proposal.risk_level === 'critical') {
-      if (!riskWarning) {
-        setRiskWarning(true);
-        return;
-      }
+    const highRisk =
+      proposal.risk_level === 'high' ||
+      proposal.risk_level === 'critical';
+
+    const currentCount = proposal.confirmation_count ?? 0;
+    const required = proposal.required_confirmations ?? (highRisk ? 2 : 1);
+
+    if (highRisk && currentCount === 0 && !riskWarning) {
+      setRiskWarning(true);
+      return;
     }
 
     setActionLoading(true);
@@ -727,9 +769,9 @@ function AIScreen({ onNavigate: _onNavigate }: { onNavigate: (tab: Tab) => void 
 
       if (count < required) {
         setActionMessage(
-          `Confirmation ${count}/${required}. Une confirmation supplémentaire est nécessaire.`,
+          `Confirmation ${count}/${required}. Une seconde confirmation est nécessaire.`,
         );
-        setRiskWarning(false);
+        setRiskWarning(true);
         return;
       }
 
